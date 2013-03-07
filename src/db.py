@@ -3,8 +3,7 @@ import string
 import random
 
 class DObject(object):
-    @property db
-    def __get_db(self):
+    def get_db(self):
         """get database instance; if not established then create"""
         if isinstance(self.__db, sqlite3.Connection):
             return self.__db
@@ -16,12 +15,12 @@ class DObject(object):
     def __run_init_queries(self):
         """initializes DB; just have a connection before calling this method"""
         # ensure we have a DB connection
-        if ! isinstance(self.__db, sqlite3.Connection):
+        if not isinstance(self.__db, sqlite3.Connection):
             raise Exception('database connection not established')
 
         query_list= []
         if not self.__init_queries is None:
-            if isinstance(self.__init_queries, str) || isinstace(self.__init_queries,tuple):
+            if isinstance(self.__init_queries, str) or isinstace(self.__init_queries,tuple):
                 query_list= [self.__init_queries]
             elif isinstance(self.__init_queries,list):
                 query_list= self.__init_queries
@@ -57,16 +56,16 @@ class DObject(object):
         self.__isolation_level= isolation_level
         self.__db= None
 
-   def q_multiple(self, q_list, result_type='ALL_ROWS', auto_commit=False):
-       """executes more than one queries, and return a list of results"""
+    def q_multiple(self, q_list, result_type='ALL_ROWS', auto_commit=False):
+        """executes more than one queries, and return a list of results"""
         q_list_= q_list if isinstance(q_list,list) else [q_list]
         result_list= []
 
         for q_list_item in q_list_:
-            if isinstance(q_list_item,tuple) || isinstance(q_list_item,list):
-                result_list.append(self.q(q_list_item[0], q_list_item[1], result_type, auto_commit=False)
+            if isinstance(q_list_item,tuple) or isinstance(q_list_item,list):
+                result_list.append(self.q(q_list_item[0], q_list_item[1], result_type, auto_commit=False))
             elif isinstance(q_list_item,str):
-                result_list.append(self.q(q_list_item, None, result_type, auto_commit=False)
+                result_list.append(self.q(q_list_item, None, result_type, auto_commit=False))
             else:
                 raise TypeError('list item should be a string or tuple')
 
@@ -75,7 +74,7 @@ class DObject(object):
 
         return result_list
 
-   def q(self, query, params=None, result_type='ALL_ROWS', auto_commit=False):
+    def q(self, query, params=None, result_type='ALL_ROWS', auto_commit=False):
         """
             executes a query.
             query: string
@@ -89,14 +88,14 @@ class DObject(object):
             return self.q_multiple(query, result_type, auto_commit)
 
         # -- type check --
-        if !params is None:
-            if !isinstance(params,dict) && !isinstance(params,tuple):
+        if not params is None:
+            if not isinstance(params,dict) and not isinstance(params,tuple):
                 raise TypeError('params should be a dict or tuple type')
-        if !isinstance(query,str):
+        if not isinstance(query,str):
                 raise TypeError('query should be a str')
 
         result= False
-        cursor= self.db.cursor()
+        cursor= self.get_db().cursor()
         cursor.execute(sql_str, params)
         if 'NUMBER'== result_type:
             row= cursor.fetchone()
@@ -173,13 +172,13 @@ class DPeople(DObject):
             ''',{'nick_name':nick_name, 'user_id':user_id, 'user_name':user_name},'LAST_ROWID')
 
     def get_users_of(self, person_id=None, nick_name=None):
-        if !person_id is None:
+        if not person_id is None:
             # search by person_id
             return self.q('''
                 SELECT * FROM `people` p WHERE p.person_id=:person_id
                 ''',{'person_id':person_id},'ALL_ROWS')
 
-        elif !nick_name is None:
+        elif not nick_name is None:
             # search by nick name
             return self.q('''
                 SELECT * FROM `people` p WHERE p.nick_name=:nick_name
@@ -197,11 +196,11 @@ class DPeople(DObject):
             usernames_dict: dict
                 should be {'user_id':'new_user_name', ...}
         """
-        if !instanceof(usernames_dict,dict):
+        if not instanceof(usernames_dict,dict):
             raise TypeError('usernames_dict should be a dict')
 
         rows_updated= 0
-        for user_id IN usernames_dict.keys():
+        for user_id in usernames_dict.keys():
             user_name= usernames_dict[user_id]
             rows_updated += self.q('''
                 UPDATE OR IGNORE people
