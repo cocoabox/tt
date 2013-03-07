@@ -209,3 +209,83 @@ class DPeople(DObject):
 
         return rows_updated
 
+
+class DTweets(DObject):
+    DB_FILENAME= 'tt_main.db'
+    INIT_QUERIES= ['''
+        CREATE TABLE IF NOT EXISTS `tweets`(
+            tweet_id INTEGER PRIMARY KEY,
+			timeline_owner INTEGER,
+			created_by INTEGER,
+			in_reply_to_tweet INTEGER,
+			in_reply_to_user INTEGER,
+			date TEXT,
+			html_text TEXT,
+			plain_text TEXT
+        )
+        ''','''
+        CREATE TABLE IF NOT EXISTS `mentions`(
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tweet_id INTEGER,
+			user_id INTEGER
+        )
+        ''','''
+        CREATE INDEX IF NOT EXISTS tweets__in_reply_to_tweet ON tweets(
+            in_reply_to_tweet
+        )
+        ''','''
+        CREATE INDEX IF NOT EXISTS tweets__in_reply_to_user ON tweets(
+            in_reply_to_user
+        )
+        ''','''
+        CREATE INDEX IF NOT EXISTS mentions__tweet_id ON mentions(
+            tweet_id
+        )
+        ''']
+
+    def __init__(self, directory='../var', isolation_level='DEFERRED'):
+        super(DPeople,self).__init__(directory+'/'+ self.DB_FILENAME, self.INIT_QUERIES+DPeople.INIT_QUERIES, isolation_level)
+	
+	def get_timeline_of(self, person_id=None, user_id=None):
+		pass
+	
+	def get_tweets_of(self, person_id=None, user_id=None):
+		pass	
+		
+	def get_mentions_of(self, person_id=None, user_id=None):
+		pass
+
+	def get_replies(self, tweet_id):
+		pass
+		
+	def get_reply_count(self, tweet_id):
+		pass
+			
+			
+class DThread(DObject):
+    DB_FILENAME= 'tt_main.db'
+    INIT_QUERIES= ['''
+        CREATE TABLE IF NOT EXISTS `threads`(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+			tweet_id INTEGER,
+			root_tweet_id INTEGER,
+			parent_tweet_id INTEGER
+        )
+        ''','''
+        CREATE INDEX IF NOT EXISTS threads__root ON threads(
+            root_tweet_id
+        )
+        ''','''
+        CREATE INDEX IF NOT EXISTS threads__parent ON threads(
+            parent_tweet_id
+        )
+        ''']
+
+    def __init__(self, directory='../var', isolation_level='DEFERRED'):
+        super(DPeople,self).__init__(directory+'/'+ self.DB_FILENAME, self.INIT_QUERIES+DTweets.INIT_QUERIES, isolation_level)
+	
+	def get_thread_tree(self, tweet_id, get_content_bool=False):
+		pass
+		
+	def get_child_count(self, tweet_id):
+		pass
