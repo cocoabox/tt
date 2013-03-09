@@ -121,24 +121,86 @@ class DObject(object):
 
         return result
 
+    @classmethod
+    def _make_set_clause(cls, kv_pairs_dict, table_name='', parameter_prefix_str='par'):
+        """generates a 'colA=:par1, colB=:par2,...' and parameter dictionary"""
+        sql_str_list= []
+        params_dict= {}
+        par_count= 0
 
-class DCredentails(DObject):
+        for column_name in kv_pairs_dict:
+            param_name= '%s_%s' % (parameter_prefix_str, par_count)
+            if table_name== '':
+                sql_str_list.append('`%s`=:%s' % (column_name, param_name) 
+            else
+                sql_str_list.append('`%s`.`%s`=:%s' % (table_name, column_name, param_name)
+            
+            params_dict[param_name]= kv_pairs_dict[column_name]
+            par_count+= 1
+
+        return (','.join(sql_str_list), params_dict)
+
+    @classmethod
+    def _make_insert_clause(cls, kv_pairs_dict, parameter_prefix_str='par'):
+        """generates a '(col1,col2,..) VALUES (:par1,:par2,...)' and parameter dictionary"""
+        column_names_list=[]
+        par_names_list= []
+        params_dict= {}
+        par_count= 0
+
+        for column_name in kv_pairs_dict:
+            param_name= '%s_%s' % (parameter_prefix_str, par_count)
+            par_names_list.append(':'+param_name)
+            column_names_list.append('`%s`' % column_name)
+            params_dict[param_name]= kv_pairs_dict[column_name]
+            par_count+= 1
+
+        return ('(%s) VALUES (%s)' % (','.join(column_names_list), ','.join(par_names_list)), params_dict)
+    
+    @classmethod
+    def _has_all_keys(cls, subject_dict, search_for_list, fail_if_extra=False):
+        """returns true if subject_dict contains all keys in search_for_list"""
+        for key in search_for_list:
+            if not key in subject_dict:
+                return False
+        # if a key in subject is not expected, then return False
+        if fail_if_extra:
+            for key in subject_dict:
+                if not key in search_for_list:
+                    return False
+
+        return True
+
+
+class DProfiles(DObject):
     DB_FILENAME= 'tt_setup.db'
     INIT_QUERIES= ['''
-        CREATE TABLE IF NOT EXISTS `credentials`(
-            alias TEXT PRIMARY KEY,
-            state INTEGER,
-            session_data TEXT,
-            user_info TEXT
+        CREATE TABLE IF NOT EXISTS `profiles`(
+            profile_alias TEXT PRIMARY KEY, 
+            tokens TEXT,
+            user_id INTEGER 
         )
         ''']
     def __init__(self, directory='../var', isolation_level='DEFERRED'):
-        super(DCredentials,self).__init__(directory+'/'+self.DB_FILENAME, self.INIT_QUERIES, isolation_level)
-    def insert(self, alias, state, session_data, user_info):
-        pass
-    def delete(self, alias):
-        pass
-    def update_user_info(self, alias, user_info):
+        super(DProfiles,self).__init__(directory+'/'+self.DB_FILENAME, self.INIT_QUERIES, isolation_level)
+
+    def insert(self, profile_info):
+        """inserts a row into the profiles table; profile_info = {'profile_alias':xx,'tokens':xx,'user_id':xx}"""
+        assert(self._has_all_keys(profile_info,['profile_alias','tokens','user_id'],fail_if_extra=True))
+        insert_tuple= self._make_insert_clause(profile_info)
+        return self.q('INSERT OR REPLACE INTO `profiles` %s'% insert_tuple[0], insert_tuple[1], 'NUMBER_OF_ROWS_AFFECTED')
+
+    def get_profile(self, profile_id):
+        return self.q('SELECT * FROM profiles WHERE profile_id=:profile_id', {'profile_id': profile_id}, 'ONE_ROW')
+    
+    def get_profiles(self, authenticated_only=True):
+        where_str= 'tokens IS NOT NULL' if authenticated_only else ''
+        return self.q('SELECT * FROM profiles WHERE %s' % where_str, {}, 'ALL_ROWS')
+
+    def delete(self, profile_alias):
+        return self.q('DELETE FROM profiles WHERE profile_id=:profile_id', {'profile_id': profile_id}, 'NUMBER_OF_ROWS_AFFECTED')
+
+    def update(self, profile_alias, profile_info):
         pass
 
 
@@ -150,7 +212,8 @@ class DPeople(DObject):
             person_id INTEGER,
             nick_name TEXT,
             user_name TEXT,
-            user_id INTEGER
+            user_id INTEGER,
+            flags INTEGER
         )
         ''','''
         CREATE INDEX IF NOT EXISTS people__person_id ON people(
@@ -161,6 +224,7 @@ class DPeople(DObject):
             nick_name
         )
         ''']
+    FLAG_MYSELF=1
 
     def __init__(self, directory='../var', isolation_level='DEFERRED'):
         super(DPeople,self).__init__(directory+'/'+self.DB_FILENAME, self.INIT_QUERIES, isolation_level)
@@ -190,12 +254,7 @@ class DPeople(DObject):
     def get_people(self):
         return self.q('SELECT DISTINCT person_id,nick_name FROM people','ALL_ROWS')
 
-    def update_user_names(self, usernames_dict):
-        """
-            updates user_name in the people table
-            usernames_dict: dict
-                should be {'user_id':'new_user_name', ...}
-        """
+    def update_user_names(s= [self.__init_queries]
         if not instanceof(usernames_dict,dict):
             raise TypeError('usernames_dict should be a dict')
 
@@ -215,19 +274,20 @@ class DTweets(DObject):
     INIT_QUERIES= ['''
         CREATE TABLE IF NOT EXISTS `tweets`(
             tweet_id INTEGER PRIMARY KEY,
-			timeline_owner INTEGER,
-			created_by INTEGER,
-			in_reply_to_tweet INTEGER,
-			in_reply_to_user INTEGER,
-			date TEXT,
-			html_text TEXT,
-			plain_text TEXT
+            timeline_owner INTEGER,
+            profile_id INTEGER,
+            created_by INTEGER,
+            in_reply_to_tweet INTEGER,
+            in_reply_to_user INTEGER,
+            date TEXT,
+            html_text TEXT,
+            plain_text TEXT
         )
         ''','''
         CREATE TABLE IF NOT EXISTS `mentions`(
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             tweet_id INTEGER,
-			user_id INTEGER
+            user_id INTEGER
         )
         ''','''
         CREATE INDEX IF NOT EXISTS tweets__in_reply_to_tweet ON tweets(
@@ -244,32 +304,88 @@ class DTweets(DObject):
         ''']
 
     def __init__(self, directory='../var', isolation_level='DEFERRED'):
-        super(DPeople,self).__init__(directory+'/'+ self.DB_FILENAME, self.INIT_QUERIES+DPeople.INIT_QUERIES, isolation_level)
-	
-	def get_timeline_of(self, person_id=None, user_id=None):
-		pass
-	
-	def get_tweets_of(self, person_id=None, user_id=None):
-		pass	
-		
-	def get_mentions_of(self, person_id=None, user_id=None):
-		pass
+        init_queries= self.INIT_QUERIES +DPeople.INIT_QUERIES +DProfiles.INIT_QUERIES
+        super(DTweets,self).__init__(directory+'/'+ self.DB_FILENAME, init_queries, isolation_level)
+    
+    def get_timeline_of(self, person_id=None, user_id=None):
+        pass
 
-	def get_replies(self, tweet_id):
-		pass
-		
-	def get_reply_count(self, tweet_id):
-		pass
-			
-			
+    def get_tweets_of(self, person_id=None, user_id=None):
+        pass
+
+    def get_mentions_of(self, person_id=None, user_id=None):
+        pass
+
+    def get_replies(self, tweet_id):
+        pass
+
+    def get_reply_count(self, tweet_id=None, user_id=None, person_id=None):
+        if not tweet_id is None:
+            return self.q("""SELECT COUNT(tweet_id) FROM tweets WHERE in_reply_to_tweet=:tweet_id""", {'tweet_id':tweet_id}, 'NUMBER')
+        elif not user_id is None:
+            return self.q("""SELECT COUNT(tweet_id) FROM tweets WHERE in_reply_to_user=:user_id""", {'user_id':user_id}, 'NUMBER')
+        elif not person_id is None:
+            return self.q("""SELECT COUNT(tweet_id) FROM tweets WHERE in_reply_to_user=:user_id""", {'user_id':user_id}, 'NUMBER')
+        else:
+            throw Exception('either tweet_id, user_id, person_id should be not None')
+
+    def get_tweet(self, tweet_id)
+        """ get a tweet by tweet ID"""
+        return self.q("""
+            SELECT t.* FROM tweets t
+            OUTER JOIN profiles pr ON t.profile_id=pr.profile_id
+            WHERE t.tweet_id=:tweet_id""", {'tweet_id':tweet_id}, 'ONE_ROW')
+    
+    def get_tweets(self, tweet_id=None, user_id=None, person_id=None, timeline_owner=None):
+        """select multiple tweets. provide timeline_owner or (user_id or person_id)"""
+        if timeline_owner is None:
+            
+            pass
+        else:
+            pass
+
+    def __insert_tweet(self, tweet, profile=None):
+        """add one tweet to the database; returns True if insertion was successful"""
+        data_dict= {}
+
+        # profile can be either a profile row or an integer
+        if instanceof(profile,dict) and 'profile_id' in dict:
+            data_dict['profile_id']= profile['profile_id']
+        else
+            data_dict['profile_id']= profile
+        
+        # prepare tweet data
+        if not isinstance(tweet,dict):
+            throw TypeError('expecting tweet to be a dict')
+            
+        # execute query
+        return 1== self.q("""
+            INSERT OR REPLACE INTO `tweets`
+            (tweet_id, timeline_owner, profile_id, created_by, in_reply_to_tweet, in_reply_to_user, date, html_text, plain_text)
+            VALUES (:tweet_id, :timeline_owner, :profile_id, :created_by, :in_reply_to_tweet, :in_reply_to_user, :date, :html_text, :plain_text)
+        """, data_dict, 'NUMBER_OF_ROWS_AFFECTED') 
+
+    def insert_tweets(self, tweets, profile=None):
+        """add one or more tweets to the database"""
+        tweet_list= None
+        if isinstance(tweets,dict):
+            return self.__insert_tweet(self, tweets, authenticating_user)
+        elif isinstance(tweets,list):
+            result_list= []
+            result_list.append(self.__insert_tweet(tweet, authenticating_user))
+            return result_list
+        else
+            throw TypeError('expecting a dict or list')
+
+
 class DThread(DObject):
     DB_FILENAME= 'tt_main.db'
     INIT_QUERIES= ['''
         CREATE TABLE IF NOT EXISTS `threads`(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-			tweet_id INTEGER,
-			root_tweet_id INTEGER,
-			parent_tweet_id INTEGER
+            tweet_id INTEGER,
+            root_tweet_id INTEGER,
+            parent_tweet_id INTEGER
         )
         ''','''
         CREATE INDEX IF NOT EXISTS threads__root ON threads(
@@ -283,9 +399,9 @@ class DThread(DObject):
 
     def __init__(self, directory='../var', isolation_level='DEFERRED'):
         super(DPeople,self).__init__(directory+'/'+ self.DB_FILENAME, self.INIT_QUERIES+DTweets.INIT_QUERIES, isolation_level)
-	
-	def get_thread_tree(self, tweet_id, get_content_bool=False):
-		pass
-		
-	def get_child_count(self, tweet_id):
-		pass
+
+    def get_thread_tree(self, tweet_id, get_content_bool=False):
+        pass
+
+    def get_child_count(self, tweet_id):
+        pass
