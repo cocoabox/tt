@@ -2,6 +2,7 @@ import sqlite3
 import string
 import random
 import os
+import time
 
 # TODO: create singleton to reuse database connection (if same DSN)
 class DObject(object):
@@ -500,3 +501,71 @@ class DThread(DObject):
 
     def get_child_count(self, tweet_id):
         pass
+
+
+class DSchedules(DObject):
+    DB_FILENAME= 'tt_setup.db'
+    INIT_QUERIES= ['''
+        CREATE TABLE IF NOT EXISTS `schedules`(
+            schedule_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            interval INTEGER,
+            last_run INTEGER,
+            profile_id INTEGER,
+            action TEXT,
+            target TEXT,
+            priority INTEGER
+        )
+        ''','''
+        CREATE INDEX IF NOT EXISTS schedules__last_run ON schedules(
+            last_run 
+        )
+        ''','''
+        CREATE INDEX IF NOT EXISTS schedules__action ON schedules(
+            action, target, interval 
+        ''']
+
+    def __init__(self, directory='../var'):
+        super(DSchedules,self).__init__(directory+'/'+self.DB_FILENAME, self.INIT_QUERIES)
+
+    def insert(self, schedule_info):
+        insert_tuple= self._make_insert_clause(schedule_info,['interval','profile_id','action','target','priority'])
+        return self.q("""
+            INSERT OR REPLACE INTO schedule %s
+            """ % insert_tuple[0], insert_tuple[1], 'LAST_ROWID'])
+    
+    def get_schedules(self, runnable_only=True):
+        """get a list of scheduled tasks (at this moment). returns a list of dicts"""
+        return self.q("""
+            SELECT * FROM schedules s
+            WHERE %s
+            ORDER BY s.priority DESC
+            """ % """
+            s.last_run IS NULL OR s.last_run <= strftime('%s', 'now') - s.interval
+            """ if runnable_only else '1', {}, 'ALL_ROWS')
+
+    def set_run_just_now(self, schedule_id):
+        current_timestamp= int(time.time())
+        update_tuple= self._make_set_clause({'last_run': current_timestamp})
+        return 1== self.q("""
+            UPDATE schedules SET %s WHERE schedule_id=:schedule_id
+            """% update_tuple[0], [{'schedule_id':schedule_id},update_tuple[1]], 'NUMBER_OF_ROWS_AFFECTED', auto_commit=True)
+
+    def delete(self, schedule_id):
+        """delete scheduled task by ID"""
+        return self.q("""
+            DELETE FROM schedules WHERE schedule_id=:schedule_id
+            """, {'schedule_id': schedule_id}, 'NUMBER_OF_ROWS_AFFECTED', auto_commit=True)
+
+    def update(self, schedule_id, schedule_info, reset_last_run=True):
+        """modifies scheduled task info"""
+        schedule_info2= schedule_info.copy()
+        if reset_last_run:
+            schedule_info2['last_run']= None
+
+        update_tuple= self._make_set_clause(schedule_info2, accepted_columns_list=['interval','profile_id','action','target','priority'])
+        return 1== self.q("""
+            UPDATE schedules SET %s WHERE schedule_id=:schedule_id
+            """ % update_tuple[0], [{'schedule_id':schedule_id}, update_tuple[1]], 'NUMBER_OF_ROWS_AFFECTED', auto_commit=True)
+
+
+
