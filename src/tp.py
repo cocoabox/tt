@@ -15,13 +15,15 @@ class TpObject(object):
     #
     TWEEPY_HAS_LAST_REQUEST= True 
 
-    # change consumer keys and secret below
+    # change consumer keys and secret below; or can be overridden in descendant classes
     consumer_key= 'IQKbtAYlXLripLGPWd0HUA'
     consumer_secret= 'GgDYlkSvaPxGxC4X8liwpUoqKwwr3lCADbz8A7ADU'
-    api_objects= None
-    __api_limits= None
-    __tweepy_limits= None
-    __last_api= None
+
+    # class variables
+    _api_objects= None
+    _api_limits= None
+    _tweepy_limits= None
+    _last_api= None
 
     @classmethod 
     def __make_profile_str(cls, token_dict):
@@ -35,19 +37,19 @@ class TpObject(object):
     def __get_api_object(cls, token_dict):
         """caches and retrieves Tweepy API object"""
         # this string should differ between each "account" you are impersonating
-        profile_str= cls.__make_profile_str(token_dict)
+        profile_str= TpObject.__make_profile_str(token_dict)
         if not profile_str:
             raise Exception('unknown token given')
 
-        if cls.api_objects is None:
-            cls.api_objects= {} 
-        if not profile_str in cls.api_objects:
+        if TpObject._api_objects is None:
+            TpObject._api_objects= {} 
+        if not profile_str in TpObject._api_objects:
             # create a new API object  
             auth= tweepy.OAuthHandler(cls.consumer_key, cls.consumer_secret)
             auth.set_access_token(token_dict['key'], token_dict['secret'])
-            cls.api_objects[profile_str]= tweepy.API(auth)
+            TpObject._api_objects[profile_str]= tweepy.API(auth)
 
-        return cls.api_objects[profile_str]
+        return TpObject._api_objects[profile_str]
 
     @classmethod 
     def get_request(cls, signin_with_twitter=False):
@@ -97,9 +99,9 @@ class TpObject(object):
         api_name= None
         self.__last_tweepy_method= tweepy_method_str
         if TpObject.TWEEPY_HAS_LAST_REQUEST and hasattr(api_object, 'last_request'):
-            self.__last_api= api_object.last_request
+            self._last_api= api_object.last_request
             # save API limiting info    
-            api_name='%s %s' % self.__last_api
+            api_name='%s %s' % self._last_api
             
         if api_object is not None:
             # [('header_key':'value'), (xx,yy), ...]
@@ -131,62 +133,67 @@ class TpObject(object):
 
         # update api limit info
         if api_method_path_str is not None:
-            if TpObject.__api_limits is None:
-                TpObject.__api_limits = {}
-            if not profile_str in TpObject.__api_limits:
-                    TpObject.__api_limits[profile_str]= {}
-            TpObject.__api_limits[profile_str][api_method_path_str]= limit_info 
+            if TpObject._api_limits is None:
+                TpObject._api_limits = {}
+            if not profile_str in TpObject._api_limits:
+                    TpObject._api_limits[profile_str]= {}
+            TpObject._api_limits[profile_str][api_method_path_str]= limit_info 
 
         # update "tweepy call" limit info 
-        if TpObject.__tweepy_limits is None:
-            TpObject.__tweepy_limits = {}
-        if not profile_str in TpObject.__tweepy_limits:
-                TpObject.__tweepy_limits[profile_str]= {}
-        TpObject.__tweepy_limits[profile_str][tweepy_method_str]= limit_info
+        if TpObject._tweepy_limits is None:
+            TpObject._tweepy_limits = {}
+        if not profile_str in TpObject._tweepy_limits:
+                TpObject._tweepy_limits[profile_str]= {}
+        TpObject._tweepy_limits[profile_str][tweepy_method_str]= limit_info
 
     def get_api_limit(self, api=None):
         """
-            get rate-limit info {...} for a particular API e.g ("GET", "statuses/home_timeline")
-            returns False if no data
+            get rate-limit info {...} for a particular API e.g ("GET", "statuses/home_timeline").
+            api='path/to/api' or ('HTTP_METHOD','path/to/api'); returns False if no data
             note: since the user may be using other clients, data returned here are not 100% reliable
         """
-        if TpObject.__api_limits is None or not self.__profile_str in TpObject.__api_limits:
+        if TpObject._api_limits is None or not self.__profile_str in TpObject._api_limits:
             return False
+
         if api is None:
-            return TpObject.__api_limits[self.__profile_str]
+            return TpObject._api_limits[self.__profile_str]
         else:
             if isinstance(api,tuple):
                 # e.g. GET statuses/home_timeline
                 search_key= '%s %s' % (api[0],api[1])
-                if search_key in TpObject.__api_limits[self.__profile_str]: 
-                    return TpObject.__api_limits[self.__profile_str][search_key]
+                if search_key in TpObject._api_limits[self.__profile_str]: 
+                    return TpObject._api_limits[self.__profile_str][search_key]
                 else:
                     return False
 
             elif isinstance(api,basestring):
-                for search_key in TpObject.__api_limits[self.__profile_str]: 
+                for search_key in TpObject._api_limits[self.__profile_str]: 
                     regex_result= re.search(r'(OPTIONS|GET|HEAD|POST|PUT|DELETE|TRACE|CONNECT) (.*)', search_key) 
                     if regex_result.group(1) != '' and regex_result.group(2)==api:
-                        return TpObject.__api_limits[self.__profile_str][search_key]
+                        return TpObject._api_limits[self.__profile_str][search_key]
                 return False
             else:
                 raise TypeError('expecting api to be tuple or string')
 
     def get_tweepy_limit(self, tweepy_method_str=None):
         """get rate-limit info {...} for a particular tweepy call; returns False if no data"""
-        if TpObject.__tweepy_limits is None or not self.__profile_str in TpObject.__tweepy_limits:
+        if TpObject._tweepy_limits is None or not self.__profile_str in TpObject._tweepy_limits:
             return False
         if tweepy_method_str is None:
-            return TpObject.__tweepy_limits[self.__profile_str]
+            return TpObject._tweepy_limits[self.__profile_str]
         else:
-            if tweepy_method_str in TpObject.__tweepy_limits[self.__profile_str]: 
-                return TpObject.__tweepy_limits[self.__profile_str][tweepy_method_str]
+            if tweepy_method_str in TpObject._tweepy_limits[self.__profile_str]: 
+                return TpObject._tweepy_limits[self.__profile_str][tweepy_method_str]
             else:
                 return False
 
     @property 
     def last_api(self):
-        return self.__last_api
+        """
+            returns a tuple e.g. ('GET', '/users/status.json') for last API call; False if data is not available
+            needs TWEEPY_HAS_LAST_REQUEST
+        """
+        return self._last_api
 
     @property
     def last_response_header(self):
