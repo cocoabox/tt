@@ -196,11 +196,19 @@ class DObject(object):
         return ('IN (%s)' % ','.join(par_names_list), params_dict)
 
     @classmethod
-    def _has_all_keys(cls, subject_dict, search_for_list, fail_if_extra=False):
-        """returns true if subject_dict contains all keys in search_for_list"""
-        for key in search_for_list:
-            if not key in subject_dict:
-                return False
+    def _has_all_keys(cls, subject_dict, search_for, fail_if_extra=False):
+        """returns true if subject_dict contains all keys in search_for_list;
+            search_for: list of 'key' or list of ('key','default_value')
+        """
+        for wanted in search_for:
+            if isinstance(wanted,tuple) and len(wanted)==2:
+                if not wanted[0] in subject_dict:
+                    subject_dict[wanted[0]] = wanted[1]
+            elif isinstance(wanted,basestring):
+                if not wanted in subject_dict:
+                    return False
+            else:
+                raise TypeError('search_for contains an unrecognized type; expecting string or 2-tuple')
         # if a key in subject is not expected, then return False
         if fail_if_extra:
             for key in subject_dict:
@@ -216,8 +224,10 @@ class DProfiles(DObject):
         CREATE TABLE IF NOT EXISTS `profiles`(
             profile_alias TEXT PRIMARY KEY, 
             auth_data TEXT,
+            auth_flag INTEGER,
             user_id INTEGER,
-            flag INTEGER
+            purpose TEXT,
+            priority INTEGER
         )
         ''']
     FLAG_NONE= 0
@@ -228,7 +238,7 @@ class DProfiles(DObject):
 
     def insert(self, profile_info):
         """inserts a row into the profiles table; profile_info = {'profile_alias':xx,'auth_data':xx,'user_id':xx}"""
-        if not self._has_all_keys(profile_info,['profile_alias','auth_data','user_id','flag'],fail_if_extra=True):
+        if not self._has_all_keys(profile_info,['profile_alias','auth_data','user_id','auth_flag','purpose','priority'],fail_if_extra=True):
             raise Exception('expected keys not found (or extra keys found) in profile_info')
 
         insert_tuple= self._make_insert_clause(profile_info)    # insert_tuple=(sql_str,param_dict)
@@ -239,11 +249,11 @@ class DProfiles(DObject):
     def get_profile(self, profile_id):
         return self.q('SELECT * FROM profiles WHERE profile_id=:profile_id', {'profile_id': profile_id}, 'ONE_ROW')
     
-    def get_profiles(self, flag=None):
-        if flag is None:
+    def get_profiles(self, auth_flag=None):
+        if auth_flag is None:
             return self.q('SELECT * FROM profiles', {}, 'ALL_ROWS')
         else:
-            return self.q('SELECT * FROM profiles WHERE flag=:flag', {'flag':flag}, 'ALL_ROWS')
+            return self.q('SELECT * FROM profiles WHERE auth_flag=:auth_flag', {'auth_flag':auth_flag}, 'ALL_ROWS')
 
     def delete(self, profile_alias):
         return self.q("""
@@ -251,7 +261,7 @@ class DProfiles(DObject):
             """, {'profile_alias': profile_alias}, 'NUMBER_OF_ROWS_AFFECTED', auto_commit=True)
 
     def update(self, profile_alias, profile_info):
-        update_tuple= self._make_set_clause(profile_info,accepted_columns_list=['profile_alias','auth_data','user_id'])
+        update_tuple= self._make_set_clause(profile_info,['profile_alias','auth_data','user_id',('purpose',''),'priority','auth_flag'])
         return self.q("""
             UPDATE profiles SET %s WHERE profile_alias=:profile_alias
             """ % update_tuple[0], [{'profile_alias':profile_alias}, update_tuple[1]], 'NUMBER_OF_ROWS_AFFECTED', auto_commit=True)
