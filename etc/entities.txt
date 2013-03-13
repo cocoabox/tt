@@ -1,0 +1,36 @@
+this is a #hashtag
+	↓
+HTML: this is a <a href="...">#hashtag<a>
+XML: this is a <hashtag id=".." text="#hashtag" /> 
+------------------------------------------
+cute nyanco http://t.co/12345
+	↓
+HTML['link']: cute nynaco <a href="url" alt="expanded_url">display_url</a>
+HTML['thumb']: cute nynaco <a href="url" alt="display_url">
+	<img src="media_url_https:thumb" 
+		height="150"
+		width="150" 
+		alt="thumb"
+	/>
+<a>
+XML: cute nynaco <media
+	id="..."
+	url="..."
+	display_url=".."
+	expanded_url="...">
+		<large resize="fit" height="700" width="740" media_url=".." media_url_https=".." />
+		<thumb resize="crop" height="150" width="150" media_url=".." media_url_https=".." />
+</media>
+------------------------------------------
+@screen_name foo bar
+	↓
+HTML: <a href=".." alt="name">@screen_name</a> foo bar
+XML: <user_mention
+	user_id="..."
+	screen_name="@screen_name"
+	name="user full name"
+	_retrieved="timestamp"
+/> foo bar
+
+
+

@@ -1,3 +1,27 @@
+from tp import TpTimeline
+
+t = {
+        'text': 'foo-xxxxx-hello world',
+        'entities': {
+            'media': [ 
+                {'indices': [3,9], 'text':'seg:XXXXX'},    
+                {'indices': [10,15], 'url':'haallo!!'}    
+            ],
+            'urls': [ 
+                {'indices': [0,3],
+                    "url": "http://t.co/0JG5Mcq",
+                    "display_url": "blog.twitter.com/2011/05/twitte",
+                    "expanded_url": "http://blog.twitter.com/2011/05/twitter-for-mac-update.html" 
+                }    
+            ]
+         }
+    }
+
+print TpTimeline._TpTimeline__process_entities(t)
+
+exit()
+
+# ---------------------------
 from tp import TpMyself,TpObject
 
 init_using = {'key':'', 'secret':''}
