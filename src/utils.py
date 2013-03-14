@@ -1,5 +1,7 @@
 from tweepy import utils
 from datetime import datetime
+import urllib
+
 
 def parse_timestamp(timestamp_int):
     """convert unix timestamp to a datetime instance; raises TypeError"""

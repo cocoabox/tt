@@ -2,7 +2,6 @@ import sys
 sys.path.append('../lib/tweepy')
 
 import tweepy
-import urllib
 import time
 import re
 import utils
@@ -19,7 +18,7 @@ class TpManager(object):
     # -> self.api.last_request= (self.method, self.path)   <---
     #    self.api.last_response = resp
     #
-    TWEEPY_HAS_LAST_REQUEST= True 
+    TWEEPY_HAS_LAST_REQUEST = False 
 
     # key-value pairs of 'profile_str':API_OBJECT call get_api_object() to get 
     _api_objects= None
@@ -37,7 +36,7 @@ class TpManager(object):
             return '%s|%s|%s' % (
                     token_dict['key'], 
                     token_dict['secret'], 
-                    '' if tweepy_parser is None else tweepy_parser_instance.__class__.__name__
+                    '' if tweepy_parser_instance is None else tweepy_parser_instance.__class__.__name__
             )
         else:
             return False
@@ -61,19 +60,15 @@ class TpManager(object):
             # create a new API object  
             auth= tweepy.OAuthHandler(cls.consumer_key, cls.consumer_secret)
             auth.set_access_token(token_dict['key'], token_dict['secret'])
+            print '[debug] getting tweepy API object, options=', api_opts, ' parser=', tweepy_parser_instance
             cls._api_objects[profile_str]= tweepy.API(auth_handler=auth, parser=tweepy_parser_instance, **api_opts) 
 
         return cls._api_objects[profile_str]
 
     @classmethod 
-    def get_request(cls, consumer_key=None, consumer_secret=None, signin_with_twitter=False, secure=True):
+    def get_request(cls, signin_with_twitter=False, secure=True):
         """returns request token as (request_url, request_token_obj_as_str), or False if fail"""
-        # precedence: given consumer key/secret > TpManager consumer key/secret
-        if consumer_key is None:
-            consumer_key = cls.consumer_key
-        if consumer_secret is None:
-            consumer_secret = cls.consumer_secret
-        auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
+        auth = tweepy.OAuthHandler(cls.consumer_key, cls.consumer_secret)
         auth.secure = secure
         try:
             request_url = auth.get_authorization_url(signin_with_twitter)
@@ -82,15 +77,8 @@ class TpManager(object):
             return False
     
     @classmethod
-    def get_access(cls, request_token, consumer_key=None, consumer_secret=None, pin_str=None, secure=True):
+    def get_access(cls, request_token, pin_str=None, secure=True):
         """get access token; returns {key:xx,secret:xx} or False if fail"""
-        
-        # precedence: given consumer key/secret > TpManager consumer key/secret
-        if consumer_key is None:
-            consumer_key = cls.consumer_key
-        if consumer_secret is None:
-            consumer_secret = cls.consumer_secret
-        
         # recreate the oauth request token (warning: might be expired)
         request_token_obj= None
         if isinstance(request_token, basestring):
@@ -105,7 +93,7 @@ class TpManager(object):
         if not isinstance(request_token_obj, tweepy.oauth.OAuthToken):
             raise Exception('failed to recreate request token object')
 
-        auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
+        auth = tweepy.OAuthHandler(cls.consumer_key, cls.consumer_secret)
         auth.secure = secure
         auth.request_token = request_token_obj
         try:
@@ -161,7 +149,7 @@ class TpObject(object):
     API_OPTS = {}
 
     def __set_access_token(self, token_dict):
-        self.__profile_str= self.make_profile_str(token_dict)
+        self.__profile_str= TpManager.make_profile_str(token_dict)
         if False!= self.__profile_str:
             # instantiate the tweepy parser if needed
             tweepy_parser_instance = None
@@ -173,6 +161,7 @@ class TpObject(object):
                 tweepy_parser_instance = tweepy.parsers.JSONParser() 
             else:
                 raise ValueError('invalid value of TWEEPY_PARSER; expecting "RAW","MODEL","JSON"')
+            
             self.__api= TpManager.get_api_object(token_dict, tweepy_parser_instance, api_opts=self.__api_opts)
             return True
         else:
@@ -188,7 +177,7 @@ class TpObject(object):
 
         # find current position
         for token_dict in self.__access_tokens:
-            if self.make_profile_str(token_dict) == self.__profile_str:
+            if TpManager.make_profile_str(token_dict) == self.__profile_str:
                 found_current_token = True
             else:
                 if found_current_token:
@@ -205,7 +194,7 @@ class TpObject(object):
                 self.add_token(token)
         elif isinstance(tokens, dict):
             # TODO: check if this token is already in the list
-            self.__access_tokens.append(token)
+            self.__access_tokens.append(tokens)
         else:
             raise TypeError('expecting tokens to be of list or dict type')
 
@@ -218,7 +207,7 @@ class TpObject(object):
         self.add_token(tokens)
         
         # initially use the first token
-        if len(self.__access_tokens > 0):
+        if len(self.__access_tokens) > 0:
             self.__set_access_token(self.__access_tokens[0])
 
     def update_last_api_info(self, tweepy_method_str, api_object=None):
@@ -319,15 +308,20 @@ class TpObject(object):
             retry_count= 0
            
             # dynamically call the Tweepy API; if API not found; throws AttributeError 
+            print "[debug] getting function: ", tweepy_method_name
             func= getattr(self.__api, tweepy_method_name)
+            print '[debug] found function: ', func
 
             while not give_up:
                 try:
+                    print "[debug] running"
                     api_result = func(*args, **kwargs)
+                    print "[debug] done; result: ", api_result
                     # tweepy call was successful; exit loop
                     break
 
-                except TweepyError, te:
+                except tweepy.error.TweepError as te:
+                    print '[debug] exception: ', te
                     # TODO: identify 500 errors and rate_limited errors
                     if te.response and te.response.status in (500, 502, 503, 504):
                         retry_count += 1
@@ -338,7 +332,7 @@ class TpObject(object):
                         else:
                             if self.RETRY_SLEEP:
                                 sleep(self.RETRY_SLEEP)
-                    elif te.response and te.response.status == 401:
+                    elif te.response and te.response.status in (400, 401):
                         # unauthorized; credential error 
                         give_up = True
                         api_result = (self.ERROR_BAD_CREDENTIALS, te.response.status)
@@ -372,11 +366,12 @@ class TpObject(object):
                             api_result = (self.ERROR_RATE_LIMIT, te.response.status, rate_limit_info)
                     else:
                         # unknown status code 
+                        print "[debug] error ", te.response.status
                         raise te
                 except Exception, e:
                     raise e
             # -- end while --
-                
+            print "[debug] updating last API call info"    
             self.update_last_api_info(tweepy_method_name, self.__api)
             return api_result
 
@@ -385,8 +380,8 @@ class TpMyself(TpObject):
     # having Tweepy returned a JSON object is more efficient
     TWEEPY_PARSER= 'JSON'
 
-    def __init__(self, tokens):
-        super(TpMyself,self).__init__(tokens)
+    def __init__(self, tokens, api_opts=None):
+        super(TpMyself,self).__init__(tokens, api_opts)
 
     def get_me(self):
         """ returns a JSON object representing the current user"""
@@ -396,8 +391,8 @@ class TpMyself(TpObject):
 class TpTimeline(TpObject):
     TWEEPY_PARSER= 'JSON'
 
-    def __init__(self, tokens):
-        super(TpTimeline,self).__init__(tokens)
+    def __init__(self, tokens, api_opts=None):
+        super(TpTimeline,self).__init__(tokens, api_opts)
 
     def __process_timeline(self, timeline_list, entities_opts={}, make_time=False):
         """parse timeline for entities (requires: entities_opts=True or {...}) and make """
@@ -427,7 +422,7 @@ class TpTimeline(TpObject):
             for status_obj in api_result:
                 if isinstance(status_obj, dict):
                     # useable: status_obj['text'], status_obj['user']['screen_name'], ...
-                    (html_text, xml_text) = self.__process_entities(status_obj, html_opts_dict)
+                    (html_text, xml_text) = utils.process_entities(status_obj, html_opts_dict)
                     status_obj['html_text'] = html_text
                     status_obj['xml_text'] = xml_text
                 else:

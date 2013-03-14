@@ -90,25 +90,35 @@ import os
 from tp import TpManager,TpTimeline
 import simplejson 
 
-def load_access():
-    if not os.path.isfile('../private/tt_test_access.json'):
+def load_key_secret(what):
+    filename = '../private/tt_test_%s.json' % what
+    if not os.path.isfile(filename):
         return ('', '')
-    txt_file = open('../private/tt_test_access.json')
+    txt_file = open(filename)
     dict= simplejson.load(txt_file) 
     txt_file.close()
     return (dict['key'], dict['secret'])
 
-
-def save_access(key, access):
+def save_access(key, secret):
     txt_file = open('../private/tt_test_access.json', 'w')
     txt_file.write(
-        simplejson.dump({'key':key,'access':access})
+        simplejson.dumps({'key':key,'secret':secret}, sort_keys=True, indent=4)
     )
     txt_file.close()
 
 # --- main ---
-want_secure = True
-(access_token_key, access_token_secret) = load_access()
+want_secure = True 
+
+(access_token_key, access_token_secret) = load_key_secret('access')
+(consumer_key, consumer_secret) = load_key_secret('consumer')
+
+print "consumer key: ", consumer_key
+if consumer_key:
+    TpManager.consumer_key = consumer_key
+    TpManager.consumer_secret = consumer_secret
+else:
+    print "no consumer key"
+    exit(1)
 
 inp = raw_input('access token key [blank=%s]? ' % (access_token_key if access_token_key else 'none')).strip()
 if inp:
@@ -116,10 +126,8 @@ if inp:
     while not access_token_secret:
         access_token_secret = raw_input('access token secret? ').strip()
 
-
 if not access_token_key:
-    # get request 
-    request_tuple= TpManager.get_request(secure=want_secure)
+    request_tuple= TpManager.get_request(consumer_key, consumer_secret, secure=want_secure)
     if not request_tuple:
         print "ERROR: failed to request" 
         exit(1) 
@@ -130,16 +138,20 @@ if not access_token_key:
     while not pin:
         pin = raw_input('pin? ').strip()
 
-    access_token = TpManager.get_access(request_tuple[1], pin_str=pin, secure=want_secure)
+    access_token = TpManager.get_access(request_tuple[1], consumer_key, consumer_secret, pin_str=pin, secure=want_secure)
 
     print "---access token (save)---"
     print access_token
-    init_using= access_token
 
 else:
     if access_token_secret=='':
         access_token_secret = raw_input('access token secret? ').strip()
-    init_using['key']= access_token_key
-    init_using['secret']= access_token_secret
+    access_token= {'key': access_token_key, 'secret': access_token_secret}
+
+save_access(access_token['key'], access_token['secret'])
 
 
+api_opts = { 'secure': want_secure }
+tl = TpTimeline(access_token, api_opts)
+
+print tl.get_timeline()
