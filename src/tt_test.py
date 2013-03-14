@@ -1,6 +1,9 @@
 from tp import TpTimeline
+import utils
 
-t = {
+# ---------------------------
+"""
+test_tweet_media = {
  "text": "#Photos on Twitter: taking flight http://t.co/qbJx26r",
     "entities": {
       "media": [
@@ -51,8 +54,8 @@ t = {
  
 }
 
-'''
-    {"text": "@rno Et demi!",
+test_tweet_mention = {
+    "text": "@rno Et demi!",
     "entities": {
       "media": [
       ],
@@ -74,32 +77,60 @@ t = {
       ]
     }
 }
-'''    
- 
-print TpTimeline._TpTimeline__process_entities(t, {
+
+print process_entities(test_tweet_mention, {
     'xml_full': False,
-    'html_photo_link': 'thumb'
+    'html_photo_link': 'link'
 })
 
 exit()
-
+"""
 # ---------------------------
-from tp import TpMyself,TpObject
+import os
+from tp import TpManager,TpTimeline
+import simplejson 
 
-init_using = {'key':'', 'secret':''}
+def load_access():
+    if not os.path.isfile('../private/tt_test_access.json'):
+        return ('', '')
+    txt_file = open('../private/tt_test_access.json')
+    dict= simplejson.load(txt_file) 
+    txt_file.close()
+    return (dict['key'], dict['secret'])
 
-access_token_key='402106111-TiKN8VuCPCyKyDdmKzFriN0wRi6ga9uT6iFbP41K'
-access_token_secret='foMOcftZ0XfTs46FXfkPGinuBSkmwyTJI5aKSYMcMjw'
 
-#access_token_key = raw_input('access token key [blank=none]? ').strip()
-if ''==access_token_key:
+def save_access(key, access):
+    txt_file = open('../private/tt_test_access.json', 'w')
+    txt_file.write(
+        simplejson.dump({'key':key,'access':access})
+    )
+    txt_file.close()
+
+# --- main ---
+want_secure = True
+(access_token_key, access_token_secret) = load_access()
+
+inp = raw_input('access token key [blank=%s]? ' % (access_token_key if access_token_key else 'none')).strip()
+if inp:
+    access_token_key = inp
+    while not access_token_secret:
+        access_token_secret = raw_input('access token secret? ').strip()
+
+
+if not access_token_key:
     # get request 
-    request_tuple= TpMyself.get_request()
+    request_tuple= TpManager.get_request(secure=want_secure)
+    if not request_tuple:
+        print "ERROR: failed to request" 
+        exit(1) 
     print "---request---"
     print request_tuple
 
-    pin = raw_input('pin? ').strip()
-    access_token= TpMyself.get_access(request_tuple[1], pin)
+    pin = ''
+    while not pin:
+        pin = raw_input('pin? ').strip()
+
+    access_token = TpManager.get_access(request_tuple[1], pin_str=pin, secure=want_secure)
 
     print "---access token (save)---"
     print access_token
@@ -111,13 +142,4 @@ else:
     init_using['key']= access_token_key
     init_using['secret']= access_token_secret
 
-print "---myself is---"
-myself= TpMyself(init_using)
-me_obj= myself.get_me()
-print myself.get_my_name()
 
-print "---api limit---"
-print myself.get_api_limit()
-
-print "---tweepy limit---"
-print myself.get_tweepy_limit()

@@ -5,9 +5,16 @@ import tweepy
 import urllib
 import time
 import re
+import utils
+from httplib import HTTPResponse
+from datetime import datetime
 
 
 class TpManager(object):
+    # change consumer keys and secret below; or can be overridden during get_access(), get_request() 
+    consumer_key = ''
+    consumer_secret = ''
+
     # need to patch tweepy/binder.py and add the following line:
     # -> self.api.last_request= (self.method, self.path)   <---
     #    self.api.last_response = resp
@@ -36,10 +43,11 @@ class TpManager(object):
             return False
 
     @classmethod
-    def get_api_object(cls, token_dict, tweepy_parser_instance=None): 
+    def get_api_object(cls, token_dict, tweepy_parser_instance=None, api_opts=None): 
         """caches and retrieves Tweepy API object;
             tweepy_pars_instance must be an instance of tweepy.parsers.Parser
         """
+        api_opts= {} if not api_opts else api_opts
         # this string should differ between each "account" you are impersonating
         profile_str= cls.make_profile_str(token_dict)
         if not profile_str:
@@ -53,23 +61,39 @@ class TpManager(object):
             # create a new API object  
             auth= tweepy.OAuthHandler(cls.consumer_key, cls.consumer_secret)
             auth.set_access_token(token_dict['key'], token_dict['secret'])
-            cls._api_objects[profile_str]= tweepy.API(auth_handler=auth,parser=tweepy_parser_instance) 
+            cls._api_objects[profile_str]= tweepy.API(auth_handler=auth, parser=tweepy_parser_instance, **api_opts) 
 
         return cls._api_objects[profile_str]
 
     @classmethod 
-    def get_request(cls, signin_with_twitter=False):
-        """returns request token as (request_url, request_token_obj_as_str)"""
-        auth= tweepy.OAuthHandler(cls.consumer_key, cls.consumer_secret)
-        request_url= auth.get_authorization_url(signin_with_twitter)
-        return (request_url, auth.request_token.to_string())
+    def get_request(cls, consumer_key=None, consumer_secret=None, signin_with_twitter=False, secure=True):
+        """returns request token as (request_url, request_token_obj_as_str), or False if fail"""
+        # precedence: given consumer key/secret > TpManager consumer key/secret
+        if consumer_key is None:
+            consumer_key = cls.consumer_key
+        if consumer_secret is None:
+            consumer_secret = cls.consumer_secret
+        auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
+        auth.secure = secure
+        try:
+            request_url = auth.get_authorization_url(signin_with_twitter)
+            return (request_url, auth.request_token.to_string())
+        except tweepy.TweepError as e:
+            return False
     
     @classmethod
-    def get_access(cls, request_token, pin_str=None):
+    def get_access(cls, request_token, consumer_key=None, consumer_secret=None, pin_str=None, secure=True):
         """get access token; returns {key:xx,secret:xx} or False if fail"""
+        
+        # precedence: given consumer key/secret > TpManager consumer key/secret
+        if consumer_key is None:
+            consumer_key = cls.consumer_key
+        if consumer_secret is None:
+            consumer_secret = cls.consumer_secret
+        
         # recreate the oauth request token (warning: might be expired)
         request_token_obj= None
-        if isinstance(request_token, str):
+        if isinstance(request_token, basestring):
             # str should be a urlencoded string generated from tweepy.oauth.OAuthToken.to_string()
             request_token_obj= tweepy.oauth.OAuthToken.from_string(request_token)
         elif isinstance(request_token, tweepy.oauth.OAuthToken):
@@ -81,15 +105,16 @@ class TpManager(object):
         if not isinstance(request_token_obj, tweepy.oauth.OAuthToken):
             raise Exception('failed to recreate request token object')
 
-        auth= tweepy.OAuthHandler(cls.consumer_key, cls.consumer_secret)
-        auth.request_token= request_token_obj
+        auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
+        auth.secure = secure
+        auth.request_token = request_token_obj
         try:
             token_obj= auth.get_access_token(verifier=pin_str)
             if token_obj == False:
                 return False
             else:
                 return {'key':token_obj.key, 'secret':token_obj.secret}
-        except:
+        except tweepy.TweepError as e:
             return False
 
     @classmethod
@@ -130,13 +155,10 @@ class TpObject(object):
     # number of retries and sec to sleep inbetween retries (but not upon rate-limit failures)
     RETRY_MAX = 5
     RETRY_SLEEP = 10 
-  
     # can be 'RAW', 'MODEL', 'JSON' (default=None=Model Parser)
     TWEEPY_PARSER = None 
-
-    # change consumer keys and secret below; or can be overridden in descendant classes
-    consumer_key = 'IQKbtAYlXLripLGPWd0HUA'
-    consumer_secret = 'GgDYlkSvaPxGxC4X8liwpUoqKwwr3lCADbz8A7ADU'
+    # default tweepy.API() construction parameters; can be user-overridden in: __init__(..api_opts={xx})
+    API_OPTS = {}
 
     def __set_access_token(self, token_dict):
         self.__profile_str= self.make_profile_str(token_dict)
@@ -151,7 +173,7 @@ class TpObject(object):
                 tweepy_parser_instance = tweepy.parsers.JSONParser() 
             else:
                 raise ValueError('invalid value of TWEEPY_PARSER; expecting "RAW","MODEL","JSON"')
-            self.__api= TpManager.get_api_object(token_dict, tweepy_parser_instance)
+            self.__api= TpManager.get_api_object(token_dict, tweepy_parser_instance, api_opts=self.__api_opts)
             return True
         else:
             # token_dict seems to be invalid
@@ -187,10 +209,11 @@ class TpObject(object):
         else:
             raise TypeError('expecting tokens to be of list or dict type')
 
-    def __init__(self, tokens):
+    def __init__(self, tokens, api_opts=None):
         """initializes using one access token or multiple access tokens (in terms current one fails)"""
         self.__last_response_header= {}
         self.__api= None 
+        self.__api_opts= {} if not api_opts else api_opts
         self.__access_tokens=[]
         self.add_token(tokens)
         
@@ -271,13 +294,21 @@ class TpObject(object):
         return self.__last_response_header
 
     # twitter returned 500 internal server error (server down?)
-    ERROR_500 = -1
+    ERROR_SERVER_DOWN = -1
     # rate limit exceeded AND quota from all provided tokens has been depleted
     ERROR_RATE_LIMIT = -2
-    
-    def _api(self, tweepy_method_name=None, api_params_list=None, api_params_dict=None):
-        """call tweepy method dynamically and save/return results; returns ERROR_500 or ERROR_RATE_LIMIT if failure.
-            if called without parameters, return tweepy API object
+    ERROR_BAD_CREDENTIALS = -3
+    # programming error; API was called with wrong parameters; or API endpoint not found
+    ERROR_BAD_CALL = -4
+    ERROR_REFUSED = -5
+    # entity uploaded was not processed (e.g. uploading a ZIP as a photo)
+    ERROR_BAD_UPLOAD = -6
+     
+    def _api(self, tweepy_method_name=None, *args, **kwargs):
+        """call tweepy method dynamically and save/return results. returns: 
+                tweepy.API instance ... if called without parameters
+                tuple (ERROR_xx, response_code, ..) ... on error
+                dict or list ... if successful
         """
         if self.__api is None:
             raise Exception('no API object; need authentication')
@@ -292,39 +323,57 @@ class TpObject(object):
 
             while not give_up:
                 try:
-                    if isinstance(api_params_dict,dict):
-                        if isinstance(api_params_list,list):
-                            api_result= func(*api_params_list, **api_params_dict)
-                        else:
-                            api_result= func(**api_params_dict)
-                    elif isinstance(api_params_list,list):
-                        api_result= func(*api_params_list)
-                    else:
-                        api_result= func()
+                    api_result = func(*args, **kwargs)
                     # tweepy call was successful; exit loop
                     break
 
-                except TweepyError as te:
+                except TweepyError, te:
                     # TODO: identify 500 errors and rate_limited errors
-                    if te.http_500_error:
+                    if te.response and te.response.status in (500, 502, 503, 504):
                         retry_count += 1
                         # failures due to "poor API call parameters" should not yield retries; only 500 errors!
                         if retry_count >= self.RETRY_MAX:
                             give_up = True
-                            api_result = self.ERROR_500
+                            api_result = (self.ERROR_SERVER_DOWN, te.response.status)
                         else:
                             if self.RETRY_SLEEP:
                                 sleep(self.RETRY_SLEEP)
-                    elif te.rate_limited:
+                    elif te.response and te.response.status == 401:
+                        # unauthorized; credential error 
+                        give_up = True
+                        api_result = (self.ERROR_BAD_CREDENTIALS, te.response.status)
+                    
+                    elif te.response and te.response.status == 403:
+                        # refused, access not allowed
+                        give_up = True
+                        api_result = (self.ERROR_REFUSED, te.response.status)
+
+                    elif te.response and te.response.status in (404, 406):
+                        give_up = True
+                        api_result = (self.ERROR_BAD_CALL, te.response.status)
+
+                    elif te.response and te.response.status == 422:
+                        # uploaded entity (photo) could not be processed
+                        give_up = True
+                        api_result = (self.ERROR_BAD_UPLOAD, te.response.status)
+
+                    elif te.response and te.response.status in (429, 420):
+                        # rate-limited; API 1.0 gives 420; API 1.1 gives 429
+                        rate_limit_info = {
+                                'limit': te.response.getheader('X-Rate-Limit-Limit', None),
+                                'remaining': te.response.getheader('X-Rate-Limit-Remaining', None),
+                                'time_reset': te.response.getheader('X-Rate-Limit-Reset', None),
+                        }
+           
                         # all subsequent calls will be done using this "next token"
                         if not self.__try_another_access_token():
                             # no more access tokens available
                             give_up = True
-                            api_result = self.ERROR_RATE_LIMIT
+                            api_result = (self.ERROR_RATE_LIMIT, te.response.status, rate_limit_info)
                     else:
-                        # unknown TweepyError
+                        # unknown status code 
                         raise te
-                except Exception as e:
+                except Exception, e:
                     raise e
             # -- end while --
                 
@@ -350,217 +399,21 @@ class TpTimeline(TpObject):
     def __init__(self, tokens):
         super(TpTimeline,self).__init__(tokens)
 
-    @classmethod
-    def __process_entities(cls, tweet_dict, options={}):
-        """processes tweet_dict['text'] and tweet_dict['entities']; convert to HTML and XML.
-            @see https://dev.twitter.com/docs/tweet-entities. available options are:
-            html_photo_link: 'text', 'thumb'
-            html_photo_size: 'large', 'small', ...
-            html_prefer_http': True | False
-            xml_full: True | False
-        """
-        def html_escape(text):
-            """convert some html entities; http://bit.ly/ZlOkFX"""
-            if not isinstance(text, basestring):
-                return text
-            html_escape_table = {
-                '&': '&amp;',
-                '"': '&quot;',
-                "'": '&apos;',
-                '>': '&gt;',
-                '<': '&lt;',
-            }
-            return ''.join(html_escape_table.get(c,c) for c in text)
-        
-        def make_tag(tag_name, attrib_dict, text='', escape_text=True, short_tags=False):
-            """generates a tag with or without content"""
-            attrib_list = []
-            for attrib in attrib_dict:
-                if attrib_dict[attrib] is not None:
-                    attrib_list.append('%s="%s"' % (attrib, html_escape(attrib_dict[attrib])))
-            attrib_string = ' ' + ' '.join(attrib_list)            
-            if not text:
-                if short_tags:
-                    return '<%s%s />' % (tag_name, attrib_string)
+    def __process_timeline(self, timeline_list, entities_opts={}, make_time=False):
+        """parse timeline for entities (requires: entities_opts=True or {...}) and make """
+        if isinstance(timeline_list, list):
+            for status_obj in api_result:
+                if isinstance(status_obj, dict):
+                    if entities_opts or isinstance(entities_opts, dict):
+                        # useable: status_obj['text'], status_obj['user']['screen_name'], ...
+                        entities_opts_ = entities_opts if isinstance(entities_opts, dict) else {} 
+                        (html_text, xml_text) = process_entities(status_obj, entities_opts_)
+                        status_obj['html_text'] = html_text
+                        status_obj['xml_text'] = xml_text
                 else:
-                    return '<%s%s></%s>' % (tag_name, attrib_string, tag_name)
-            else:
-                text_inside= text if not escape_text else html_escape(text)
-                return '<%s%s>%s</%s>' % (
-                        tag_name, attrib_string, text_inside, tag_name
-                )
+                    raise TypeError('expecting a dict in status_obj') 
 
-        # -- begin: __process_entities --
-        text = tweet_dict['text']
-        xml_text = ''
-        html_text = ''
-        html_opts_photo_link = options.get('html_photo_link','text')  
-        html_opts_photo_size = options.get('html_photo_size','large')  
-        html_opts_prefer_https = options.get('html_prefer_https',True)        
-        xml_opts_full_xml =  options.get('xml_full',False)        
-
-        if 'entities' in tweet_dict and isinstance(tweet_dict['entities'], dict):
-            output_list = []
-            # create a flattened entities list so we can sort later
-            ent_list= []
-            for ent_type in tweet_dict['entities']:
-                for ent_item in tweet_dict['entities'][ent_type]:
-                    ent_list.append({
-                        'type': ent_type,
-                        'item': ent_item,
-                        'pos': ent_item['indices'][0] if 'indices' in ent_item else 0,
-                        'pos_next': ent_item['indices'][1] if 'indices' in ent_item else 0,
-                        'text': ''
-                    })
-
-            # sort the list
-            ent_list.sort(key=lambda x: x['pos'])
-           
-            # prepare content_list, which will be the final output in list format
-            content_list= []
-            idx = ent_idx = 0
-            max_element_count = 99999
-            while idx < len(text) and len(content_list) <= max_element_count: 
-                if ent_idx < len(ent_list) and ent_list[ent_idx]['pos'] == idx:
-                    # next segment is an entity
-                    ent_list[ent_idx]['text'] = text[idx : ent_list[ent_idx]['pos_next']]
-                    content_list.append(ent_list[ent_idx])
-                    idx = ent_list[ent_idx]['pos_next']  
-                    ent_idx += 1
-                else:
-                    # next segment is a string (by default, the segment spans till end of the text)
-                    string_end_idx = len(text) 
-                    if ent_idx < len(ent_list):
-                        string_end_idx = ent_list[ent_idx]['pos'] 
-                    content_list.append(text[idx : string_end_idx])
-                    idx = string_end_idx 
-
-            # concatenate each member in content_list 
-            for content_list_item in content_list:
-                if isinstance(content_list_item,basestring):
-                    html_text += content_list_item
-                    xml_text += content_list_item
-                else:
-                    # is an entity
-                    entity = content_list_item['item']
-
-                    if content_list_item['type'] == 'media':
-                        html_link_target = ''
-                        thumb_img_src = ''
-
-                        size_html_list= []
-                        for size in entity.get('sizes', {}):
-                            size_dict = entity['sizes'][size] 
-                            url_https = '%s:%s' % (entity.get('media_url_https', ''), size)
-                            url_http = '%s:%s' % (entity.get('media_url', ''), size)
-
-                            size_html_list.append(make_tag('size', {
-                                'key': size, 
-                                'width': size_dict.get('w', 0), 
-                                'height': size_dict.get('h', 0), 
-                                'resize': size_dict.get('resize',''), 
-                                'url': url_http,
-                                'url_https': url_https,
-                            }))
-                            if size == html_opts_photo_size:
-                                html_link_target = url_https if html_opts_prefer_https else url_http
-                            if size == 'thumb':
-                                thumb_img_src= url_https if html_opts_prefer_https else url_http
-
-                        xml_text += make_tag('media', {
-                            'type': entity.get('type', ''),
-                            'id': entity.get('id', ''),
-                            'url': entity.get('url', ''),
-                            'display_url': entity.get('display_url', ''),
-                            'expanded_url': entity.get('expanded_url', ''),
-                        }, ''.join(size_html_list), escape_text=False)
-                        
-                        default_link = entity.get('media_url_https' if html_opts_prefer_https else 'media_url','#')
-                        link_title = None 
-                        link_text = None
-                        escape_text = True 
-                        if 'thumb' == html_opts_photo_link:
-                            if thumb_img_src:
-                                link_text = make_tag('img', {
-                                    'src': thumb_img_src,
-                                    'alt': entity.get('display_url', 'preview'),
-                                }, short_tags=True)
-                                escape_text = False 
-                            else:
-                                # no thumbnail image available
-                                link_text = entity.get('display_url','')
-                                link_title = 'no thumbnail available'
-                        else:
-                            link_text = entity.get('display_url','')
-
-                        html_text += make_tag('a', {
-                            'class': ('media %s' % entity.get('type','')).strip(),
-                            'href': html_link_target if html_link_target else default_link,
-                            'title': link_title,
-                        }, link_text, escape_text)
-
-                    elif content_list_item['type'] == 'urls':
-                        xml_text += make_tag('link', {
-                            'url': entity.get('url', ''),
-                            'display_url': entity.get('display_url', ''),
-                            'expanded_url': entity.get('expanded_url', ''),
-                        }, content_list_item['text'])
-                        
-                        html_text += make_tag('a', {
-                            'class': 'link',
-                            'href': entity.get('url', ''),
-                            'alt': entity.get('expanded_url', ''),
-                        }, content_list_item['text']);
-
-                    elif content_list_item['type'] == 'user_mentions':
-                        xml_text += make_tag('mention', {
-                            'user_id': entity.get('id', ''),
-                            'screen_name': entity.get('screen_name', ''),
-                            'name': entity.get('name', ''),
-                        }, content_list_item['text'])
-                        
-                        html_text += make_tag('a', {
-                            'class': 'mention',    
-                            # the safest way to link to a user is by user ID (user can change screen names)
-                            'href': '%s://twitter.com/account/redirect_by_id?id=%s' % (
-                                'https' if html_opts_prefer_https else 'http', entity.get('id', '')
-                            ),
-                            'alt': '%s://twitter.com/%s' % (
-                                'https' if html_opts_prefer_https else 'http', urllib.quote(entity.get('screen_name', ''))
-                            )                                
-                        }, content_list_item['text'])
-
-                    elif content_list_item['type'] == 'hashtags':
-                        xml_text += make_tag('hashtag', {
-                            'text': entity.get('text', ''),
-                        }, content_list_item['text'])
-                        
-                        html_text += make_tag('a', {
-                            'class': 'hashtag',    
-                            'href': '%s://twitter.com/search?%s' % (
-                                'https' if html_opts_prefer_https else 'http', urllib.urlencode([('q','#'+entity.get('text',''))])
-                            )
-                        }, content_list_item['text'])
-
-                    else:
-                        html_text += '<!-- unknown entity -->%s<!-- end -->' % html_escape(content_list_item['text'])
-                        xml_text += make_tag('entity', {
-                            'type': content_list_item['type'], 
-                            'content': content_list_item['item'], 
-                        }, content_list_item['text'])
-
-                
-            return (
-                    html_text,
-                    '<?xml version="1.0" enoding="utf-8" ?><tweet>%s</tweet>' % xml_text if xml_opts_full_xml else xml_text
-            )
-        else:
-            # no entities found
-            html_text= tweet_dict['text']
-            xml_text= tweet_dict['text'] 
-
-        # html: <a href="expanded_url" alt="url">url</a>
-        return (html_text, xml_text)
+        return api_result
 
     def get_timeline(self, user_id='HOME', opts_dict={}, html_opts_dict={}):
         """get timeline as list of dict"""
