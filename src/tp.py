@@ -127,7 +127,7 @@ class TpManager(object):
         if api_method_path_str is not None:
             if cls._api_limits is None:
                 cls._api_limits = {}
-            if not profile_str in cls._api_limits:
+            if not profile_str in cls._api_limits
                     cls._api_limits[profile_str]= {}
             cls._api_limits[profile_str][api_method_path_str]= limit_info 
 

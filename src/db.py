@@ -196,6 +196,39 @@ class DObject(object):
         return ('IN (%s)' % ','.join(par_names_list), params_dict)
 
     @classmethod
+    def _make_where_clause(cls, criteria_dict, omit_if_null=True, parameter_prefix_str='wherepar', glue_str='AND', table_name=None):
+        """makes a 'col=:wherepar1 AND col2=:wherepar2' and a parameter dictionary
+            None values are converted to "IS NULL" statements; or omitted if omit_if_null
+        """
+        glue_str = glue_str.strip()
+
+        criteria_list= []
+        params_dict= {}
+        par_count= 0
+
+        for col_name in criteria_dict:
+            if criteria_dict[col_name] is None:
+                if omit_if_null:
+                    continue
+                else:
+                    if table_name:
+                        criteria_list.append('`%s`.`%s` IS NULL' % (table_name, col_name))
+                    else:
+                        criteria_list.append('`%s` IS NULL' % col_name)
+                    continue
+
+            param_name= '%s_%d' % (parameter_prefix_str, par_count)
+            params_dict[param_name]= criteria_dict[col_name]
+            if table_name:
+                criteria_list.append('`%s`.`%s`=:%s' % (table_name, col_name, param_name))
+            else:
+                criteria_list.append('`%s`=:%s' % (col_name, param_name))
+            par_count+= 1
+
+        return ((' %s ' % glue_str).join(criteria_list), params_dict)
+
+
+    @classmethod
     def _has_all_keys(cls, subject_dict, search_for, fail_if_extra=False):
         """returns true if subject_dict contains all keys in search_for_list;
             search_for: list of 'key' or list of ('key','default_value')
@@ -217,7 +250,6 @@ class DObject(object):
 
         return True
 
-
 class DProfiles(DObject):
     DB_FILENAME= 'tt_setup.db'
     INIT_QUERIES= ['''
@@ -230,15 +262,19 @@ class DProfiles(DObject):
             priority INTEGER
         )
         ''']
-    FLAG_NONE= 0
-    FLAG_REQUESTED= 1
-    FLAG_AUTHENTICATED= 2
+    FLAG_NO_AUTH = 0
+    FLAG_REQUESTED = 1
+    FLAG_AUTHENTICATED = 2
+    # keys that should exist in a row; (foo,XX) = non-required keys with default value XX 
+    ROW_REQUIREMENT = [
+            'profile_alias','user_id',('purpose',''),('priority',0),('auth_flag',DProfiles.FLAG_NO_AUTH),('auth_data',None)
+        ]
     def __init__(self, directory='../var'):
         super(DProfiles,self).__init__(directory+'/'+self.DB_FILENAME, self.INIT_QUERIES)
 
     def insert(self, profile_info):
         """inserts a row into the profiles table; profile_info = {'profile_alias':xx,'auth_data':xx,'user_id':xx}"""
-        if not self._has_all_keys(profile_info,['profile_alias','auth_data','user_id','auth_flag','purpose','priority'],fail_if_extra=True):
+        if not self._has_all_keys(profile_info, self.ROW_REQUIREMENT, fail_if_extra=True):
             raise Exception('expected keys not found (or extra keys found) in profile_info')
 
         insert_tuple= self._make_insert_clause(profile_info)    # insert_tuple=(sql_str,param_dict)
@@ -249,19 +285,23 @@ class DProfiles(DObject):
     def get_profile(self, profile_id):
         return self.q('SELECT * FROM profiles WHERE profile_id=:profile_id', {'profile_id': profile_id}, 'ONE_ROW')
     
-    def get_profiles(self, auth_flag=None):
+    def get_profiles(self, auth_flag=None, purpose_str=None):
         if auth_flag is None:
             return self.q('SELECT * FROM profiles', {}, 'ALL_ROWS')
         else:
-            return self.q('SELECT * FROM profiles WHERE auth_flag=:auth_flag', {'auth_flag':auth_flag}, 'ALL_ROWS')
-
+            (where_str, where_dict) = self._make_where_clause(
+                {'auth_flag':auth_flag, 'purpose':purpose_str},
+                omit_if_null=True
+            )
+            return self.q('SELECT * FROM profiles WHERE %s' % where_str, where_dict, 'ALL_ROWS')
+    
     def delete(self, profile_alias):
         return self.q("""
             DELETE FROM profiles WHERE profile_alias=:profile_alias
             """, {'profile_alias': profile_alias}, 'NUMBER_OF_ROWS_AFFECTED', auto_commit=True)
 
     def update(self, profile_alias, profile_info):
-        update_tuple= self._make_set_clause(profile_info,['profile_alias','auth_data','user_id',('purpose',''),'priority','auth_flag'])
+        update_tuple= self._make_set_clause(profile_info, self.ROW_REQUIREMENT)
         return self.q("""
             UPDATE profiles SET %s WHERE profile_alias=:profile_alias
             """ % update_tuple[0], [{'profile_alias':profile_alias}, update_tuple[1]], 'NUMBER_OF_ROWS_AFFECTED', auto_commit=True)
@@ -341,7 +381,7 @@ class DPeople(DObject):
                 sql_str= 'SELECT person_id,nick_name,user_id FROM people WHERE user_name=:user_name'
                 params= {'user_name':user_name} 
         else:
-            throw ValueError('expecting either user_id or user_name to be not None')
+            ValueError('expecting either user_id or user_name to be not None')
             
         row_list= self.q(sql_str, params, 'ALL_ROWS')
         return row_list[0] if is_single else row_list
@@ -541,7 +581,7 @@ class DSchedules(DObject):
         insert_tuple= self._make_insert_clause(schedule_info,['interval','profile_id','action','target','priority'])
         return self.q("""
             INSERT OR REPLACE INTO schedule %s
-            """ % insert_tuple[0], insert_tuple[1], 'LAST_ROWID'])
+            """ % insert_tuple[0], insert_tuple[1], 'LAST_ROWID')
     
     def get_schedules(self, runnable_only=True):
         """get a list of scheduled tasks (at this moment). returns a list of dicts"""
