@@ -194,12 +194,17 @@ def process_entities(tweet_dict, options={}):
                     html_text += make_tag('a', {
                         'class': 'hashtag',    
                         'href': '%s://twitter.com/search?%s' % (
-                            'https' if html_opts_prefer_https else 'http', urllib.urlencode([('q','#'+entity.get('text',''))])
+                            'https' if html_opts_prefer_https else 'http', 
+                            urllib.urlencode([(
+                                'q',('#'+entity.get('text','')).encode('utf-8')
+                            )])
                         )
                     }, content_list_item['text'])
 
                 else:
-                    html_text += '<!-- unknown entity -->%s<!-- end -->' % html_escape(content_list_item['text'])
+                    html_text += '<!-- unknown entity -->%s<!-- end -->' % html_escape(
+                            content_list_item['text']
+                    )
                     xml_text += make_tag('entity', {
                         'type': content_list_item['type'], 
                         'content': content_list_item['item'], 

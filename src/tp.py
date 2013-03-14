@@ -321,7 +321,7 @@ class TpObject(object):
                     break
 
                 except tweepy.error.TweepError as te:
-                    print '[debug] exception: ', te
+                    print '[debug] exception:' , te 
                     # TODO: identify 500 errors and rate_limited errors
                     if te.response and te.response.status in (500, 502, 503, 504):
                         retry_count += 1
@@ -333,7 +333,7 @@ class TpObject(object):
                             if self.RETRY_SLEEP:
                                 sleep(self.RETRY_SLEEP)
                     elif te.response and te.response.status in (400, 401):
-                        # unauthorized; credential error 
+                        # unauthorized; credential error; or trying to open a protected account 
                         give_up = True
                         api_result = (self.ERROR_BAD_CREDENTIALS, te.response.status)
                     
@@ -394,40 +394,60 @@ class TpTimeline(TpObject):
     def __init__(self, tokens, api_opts=None):
         super(TpTimeline,self).__init__(tokens, api_opts)
 
-    def __process_timeline(self, timeline_list, entities_opts={}, make_time=False):
-        """parse timeline for entities (requires: entities_opts=True or {...}) and make """
-        if isinstance(timeline_list, list):
-            for status_obj in api_result:
-                if isinstance(status_obj, dict):
-                    if entities_opts or isinstance(entities_opts, dict):
-                        # useable: status_obj['text'], status_obj['user']['screen_name'], ...
-                        entities_opts_ = entities_opts if isinstance(entities_opts, dict) else {} 
-                        (html_text, xml_text) = process_entities(status_obj, entities_opts_)
-                        status_obj['html_text'] = html_text
-                        status_obj['xml_text'] = xml_text
-                else:
-                    raise TypeError('expecting a dict in status_obj') 
+    def __process_timeline(self, tl_list, html_opts={}, make_time=False):
+        """parse timeline for entities; adds html_text,xml_text into each element of tl_list"""
+        if not isinstance(tl_list, list):
+            raise TypeError('expecting tl_list to be of type list')
 
+        for status_obj in tl_list:
+            if isinstance(status_obj, dict):
+                if html_opts or isinstance(html_opts, dict):
+                    # useable: status_obj['text'], status_obj['user']['screen_name'], ...
+                    (html_text, xml_text) = process_html(status_obj, html_opts)
+                    status_obj['html_text'] = html_text
+                    status_obj['xml_text'] = xml_text
+            else:
+                raise TypeError('expecting a dict in status_obj') 
+
+
+    def get_my_mentions(self, opts_dict={}, html_opts_dict={}):
+        # TODO: validate opts_dict
+        opts_dict_= opts_dict.copy()
+        if not 'count' in opts_dict:
+            opts_dict['count'] = 200
+
+        # call API; if fail then it may return a tuple
+        api_result= self._api('mentions_timeline', **opts_dict_)
+        if isinstance(api_result, list):
+            self.__process_timeline(api_result)
+    
         return api_result
 
-    def get_timeline(self, user_id='HOME', opts_dict={}, html_opts_dict={}):
-        """get timeline as list of dict"""
-        tweepy_method_name= 'home_timeline' if user_id == 'HOME' else 'user_timeline'
+    def get_timeline(self, user=None, opts_dict={}, html_opts_dict={}):
+        """get timeline as list of dict. user may be (int)userID or (str)screenName
+            may return (BAD_CREDENTIALS, 401) if trying to open a protected account
+        """
         # TODO: validate opts_dict
         opts_dict_= opts_dict.copy()
 
-        # call API; hoping to get a list of Status
+        if user is None: 
+            tweepy_method_name= 'home_timeline'
+        else:
+            tweepy_method_name= 'user_timeline'
+            if isinstance(user, int):
+                opts_dict['user_id'] = user
+                if 'screen_name' in opts_dict:
+                    opts_dict.pop('screen_name')
+            elif isinstance(user, basestring):
+                opts_dict['screen_name'] = user
+        if not 'count' in opts_dict:
+            opts_dict['count'] = 200
+
+        # call API; if fail then it may return a tuple
         api_result= self._api(tweepy_method_name, **opts_dict_)
         if isinstance(api_result, list):
-            for status_obj in api_result:
-                if isinstance(status_obj, dict):
-                    # useable: status_obj['text'], status_obj['user']['screen_name'], ...
-                    (html_text, xml_text) = utils.process_entities(status_obj, html_opts_dict)
-                    status_obj['html_text'] = html_text
-                    status_obj['xml_text'] = xml_text
-                else:
-                    raise TypeError('expecting a dict in status_obj') 
-
+            self.__process_timeline(api_result)
+    
         return api_result
 
 

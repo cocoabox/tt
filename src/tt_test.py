@@ -88,21 +88,37 @@ exit()
 # ---------------------------
 import os
 from tp import TpManager,TpTimeline
-import simplejson 
+try:
+    import simplejson as json
+except:
+    import json
 
-def load_key_secret(what):
+def load_key_secret(what, which_pair=None):
     filename = '../private/tt_test_%s.json' % what
     if not os.path.isfile(filename):
         return ('', '')
     txt_file = open(filename)
-    dict= simplejson.load(txt_file) 
+    dict= json.load(txt_file) 
+
+    key=''
+    if not 'key' in dict:
+        # need to select a pair
+        if not which_pair:
+            key = dict.keys()[0]
+        else:
+            if which_pair in dict:
+                key = which_pair
+            else:
+                key = dict.keys()[0]
+        dict = dict[key]
+
     txt_file.close()
     return (dict['key'], dict['secret'])
 
 def save_access(key, secret):
     txt_file = open('../private/tt_test_access.json', 'w')
     txt_file.write(
-        simplejson.dumps({'key':key,'secret':secret}, sort_keys=True, indent=4)
+        json.dumps({'key':key,'secret':secret}, sort_keys=True, indent=4)
     )
     txt_file.close()
 
@@ -154,4 +170,16 @@ save_access(access_token['key'], access_token['secret'])
 api_opts = { 'secure': want_secure }
 tl = TpTimeline(access_token, api_opts)
 
-print tl.get_timeline()
+tl_list = tl.get_my_mentions()
+#tl_list = tl.get_timeline('raise_wave')
+if isinstance(tl_list, list):
+    print "---timeline---"
+    for tweet_dict in tl_list:
+        print tweet_dict['html_text']
+        print "---"
+else:
+    print "---error---"
+    print tl_list
+
+print "---limit---"
+print tl.get_tweepy_limit()
