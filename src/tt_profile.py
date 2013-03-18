@@ -22,18 +22,36 @@
 import sys
 import re 
 import pprint
-from tt import TtConsoleApp 
+from tt import TtArgParser 
 
-class TtProfile(TtConsoleApp):
-    param_criteria = {
+def add_profile(alias_str, purpose_str, priority_int):
+    pass
+
+def auth_profile(alias_str, pin=None):
+    pass
+
+def delete_profile(alias_str):
+    pass
+
+def update_profile(alias_str, purpose_str, priority_int):
+    pass
+
+def list_profiles():
+    pass
+
+
+#
+# -- main --
+#
+ttap = TtArgParser(definitions={    
         'add': [
-            ('<profile_alias>', str),
+            ('<profile_alias>   a unique name to identify your profile', str),
             ('[--purpose,-p]', str), 
-            ('[--priority,-r]', int),
+            ('[--priority,-r=nnn] relative order in which this profile will be used', int, 1),
         ],
         'auth': [
             ('<profile_alias>', str),
-            ('--pin,-i', int),
+            ('[--pin,-i]', int, 'verification code given by Twitter. Omit if you don\'t have one', None),
         ],
         'delete': [
             ('<profile_alias>', str),
@@ -44,14 +62,19 @@ class TtProfile(TtConsoleApp):
             ('[--priority,-r]', int),
         ],
         'list': [],
-    }
-    
-    default_action = 'list'
+    }, default_action='list')
 
-    def __init__(self):
-        super(TtProfile, self).__init__()
-        
-        print self.get_parameters()
+ttap.parse()
 
+if ttap['action'] == 'add':
+    add_profile(ttap['profile_alias'], ttap['purpose'], ttap['priority'])
 
-TtProfile()
+elif ttap['action'] == 'auth':
+    auth_profile(ttap['pin'])
+
+elif ttap['action'] == 'delete':
+    delete_profile(ttap['profile_alias'])
+
+elif ttap['action'] == 'list':
+    list_profiles()
+   
