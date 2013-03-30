@@ -15,7 +15,7 @@ p = CArgParser(param_def={
             ('<profile_alias>', str),
             ('[--pin,-i]', int, 'verification code given by Twitter. Omit if you don\'t have one', None),
         ],
-     }, default_action='foo')
+     }, default_action='foo', tolerate_regex_mismatch=False)
 
 print p.parse()
 
