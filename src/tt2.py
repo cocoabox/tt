@@ -84,17 +84,24 @@ class CArgNotEnoughRepeats(CArgRuntimeError):
 
 
 class CArgParser(object):
+<<<<<<< HEAD
     def __init__(self, app_title_str=None, app_purpose_str=None, param_def=None,
                  default_action=None, tolerate_regex_mismatch=True,
                  auto_verbose=True, auto_help=True
                 ):
         """tolerate_regex_mismatch: if true, mismatched regex will result in a string (matched regex results in tuple type"""
         self.__app_title = app_title_str or sys.argv[0]
+=======
+    def __init__(self, app_title_str=None, app_purpose_str=None, param_def=None, default_action=None, tolerate_regex_mismatch=True):
+        """tolerate_regex_mismatch: if true, mismatched regex will result in a string (matched regex results in tuple type"""
+        self.__app_title = app_title_str
+>>>>>>> e459ca04fa321c8696b333cc0811511394c15a46
         self.__app_purpose = app_purpose_str
         self.__param_def = param_def 
         self.__default_action = default_action
         self.__tolerate_regex_mismatch = tolerate_regex_mismatch
         self.__verbosity = 0
+<<<<<<< HEAD
 
         self.__auto_verbose = auto_verbose
         self.__auto_help = auto_help
@@ -116,6 +123,9 @@ class CArgParser(object):
             
         return False
 
+=======
+    
+>>>>>>> e459ca04fa321c8696b333cc0811511394c15a46
     def __find_param_def(self, param_defs, long_name=None, short_name=None):
         for arg_info in param_defs:
             if long_name is not None and arg_info['long'] == long_name:
@@ -125,6 +135,10 @@ class CArgParser(object):
         return None
     
     def __convert_arg_type(self, value_str, arg_def):
+<<<<<<< HEAD
+=======
+
+>>>>>>> e459ca04fa321c8696b333cc0811511394c15a46
         if not isinstance(arg_def, dict):
             raise TypeError('Expecting arg_def to be an instance of dict')
         if not isinstance(value_str, basestring):
@@ -161,6 +175,7 @@ class CArgParser(object):
     def __get_default_arg_value(arg_info):
         return arg_info['default'] if 'default' in arg_info else None
 
+<<<<<<< HEAD
     def __consume_one_arg(self, arg_idx, arg_defs=[], accept_special_params=True):
         """parses the next sys.argv member, processes it and returns if it is in the expected
             parameter list arg_defs. if --verbose encountered, then increases internal verbosity
@@ -193,6 +208,24 @@ class CArgParser(object):
 
             rawarg_text = sys.argv[arg_index]
 
+=======
+    def __consume_one_arg(self, arg_idx, arg_defs = []):
+        """returns none if EOL hit or 'expected arg not found'"""
+        no_rawargs_consumed = 1
+        arg_index = arg_idx
+        while True:     # used for trapping "verbose"
+            if arg_index >= len(sys.argv):
+                return None
+            print "getting #", arg_index, "; verbosity:", self.__verbosity 
+            rawarg_text = sys.argv[arg_index]
+            arg_info = {
+                    'is_named': False,
+                    'name': None,
+                    'value': None,
+                    'no_rawargs_consumed': no_rawargs_consumed,
+                    'arg_def': None,
+            }
+>>>>>>> e459ca04fa321c8696b333cc0811511394c15a46
 
             regex = re.compile('^(\-\-([A-Z,a-z,0-9,_]+)([=]?(.*))?)|(\-([A-Z,a-z,0-9,\?])(.*))$')
             regex_matches = regex.search(rawarg_text)
@@ -212,6 +245,7 @@ class CArgParser(object):
                 else:
                     raise Exception('Unexpected regular expression match while parsing: %s' % rawarg_text) 
                 
+<<<<<<< HEAD
                 #
                 # match special params --verbose 
                 #
@@ -242,13 +276,43 @@ class CArgParser(object):
                     arg_info['no_rawargs_consumed'] = no_rawargs_consumed
                     return arg_info 
 
+=======
+                if (matches[0] and arg_info['name'] == 'help') or (matches[4] and arg_info['name'] == '?'): 
+                    raise Exception('HELP')
+                elif (matches[0] and arg_info['name'] == 'verbose'): 
+                    self.__verbosity += 1
+                    arg_index += 1
+                    no_rawargs_consumed += 1
+                    continue
+                elif (matches[4] and arg_info['name'] == 'v'): 
+                    print arg_info['value']
+                    regex = re.compile('^[v]+$')
+                    if regex.search(arg_info['value']):
+                        self.__verbosity += len(arg_info['value'])
+
+                    self.__verbosity += 1
+                    arg_index += 1
+                    no_rawargs_consumed += 1
+                    continue
+
+                arg_def = self.__find_param_def(arg_defs, **call_par)
+                if not arg_def:
+                    return None
+                
+>>>>>>> e459ca04fa321c8696b333cc0811511394c15a46
                 arg_info['arg_def'] = arg_def
 
                 if arg_info['value'] is None:
                     # --spam (no value)
+<<<<<<< HEAD
                     next_arg_info = self.__consume_one_arg(self, arg_index+1, arg_defs, accept_special_params=False)
                     
                     if next_arg_info['status'] != 'match':
+=======
+                    next_arg_info = self.__consume_one_arg(self, arg_index+1, arg_defs)
+                    
+                    if not next_arg_info:
+>>>>>>> e459ca04fa321c8696b333cc0811511394c15a46
                         # --spam <EOL>
                         if arg_def['type'] == bool:
                             # --spam doesnt have an explicit value; but flag --spam alone implies TRUE
@@ -283,14 +347,19 @@ class CArgParser(object):
                 # matched a un-named raw argument
                 arg_info['is_named'] = False
                 arg_info['value'] = rawarg_text
+<<<<<<< HEAD
            
             arg_info['status'] = 'match'
+=======
+            
+>>>>>>> e459ca04fa321c8696b333cc0811511394c15a46
             return arg_info    
     
     def __is_action_enabled(self):
         return isinstance(self.__param_def, dict)
 
     def __get_action(self):
+<<<<<<< HEAD
         if not self.__is_action_enabled:
             return None
 
@@ -299,6 +368,13 @@ class CArgParser(object):
 
         arg_info = self.__consume_one_arg(1, accept_special_params=False)
         if arg_info['status'] != 'match':
+=======
+        if len(sys.argv) == 1:
+            return self.__default_action
+
+        arg_info = self.__consume_one_arg(1)
+        if arg_info is None:
+>>>>>>> e459ca04fa321c8696b333cc0811511394c15a46
             return None
         else:
             return arg_info['value'] if not arg_info['is_named'] else None
@@ -494,13 +570,24 @@ class CArgParser(object):
         # process list1
         # <Pos1>xNN <Pos2>xNN .. <PosN-1>xNN [PosN]..
         #
+<<<<<<< HEAD
         print "[DEBUG] LIST 1 START"
+=======
+        print '*** list1=', list1
+        print '*** len(list1)=', len(list1)
+>>>>>>> e459ca04fa321c8696b333cc0811511394c15a46
         list1_counter = 0
         for param_def in list1:
             if arg_idx >= len(sys.argv):
                 break
             out_key = param_def['out_key']
             list1_counter += 1
+<<<<<<< HEAD
+=======
+            print 'list1_counter=', list1_counter
+            print 'param_def=', param_def
+
+>>>>>>> e459ca04fa321c8696b333cc0811511394c15a46
             is_last_list1_item = list1_counter == len(list1)
             remain_count = get_param_repeat_count(param_def)
             is_finite = remain_count > 0
@@ -515,6 +602,7 @@ class CArgParser(object):
             this_param = [] if is_repeating else None
             while remain_count and arg_idx <= len(sys.argv):
                 user_arg_info = self.__consume_one_arg(arg_idx, list1)
+<<<<<<< HEAD
                 arg_idx += user_arg_info['no_rawargs_consumed']     
                 if user_arg_info['status'] == 'eol':
                     break
@@ -528,12 +616,25 @@ class CArgParser(object):
                     pass
                     # match
 
+=======
+                if not user_arg_info:
+                    print 'EOF hit?'
+                    break
+>>>>>>> e459ca04fa321c8696b333cc0811511394c15a46
                 if is_repeating:
                     this_param.append(user_arg_info['value'])
                 else:
                     this_param = user_arg_info['value']
                 remain_count -= 1
+<<<<<<< HEAD
                 # ~ might have consumed >1 command line args, e.g. -v,  etc. if thats the case, the while_loop will exit
+=======
+                arg_idx += user_arg_info['no_rawargs_consumed']     
+                # ~ might have consumed >1 command line args, e.g. -v, --help, etc. if thats the case, the while_loop will exit
+
+            # finished collecting current item in list1
+            all_params[param_def['out_key']] = this_param
+>>>>>>> e459ca04fa321c8696b333cc0811511394c15a46
 
                 # finished collecting current item in list1
                 all_params[param_def['out_key']] = this_param
@@ -674,12 +775,115 @@ class CArgParser(object):
                     raise CArgRequiredButMissing(param_def)
                 else:
                     all_params[out_key] = None if repeats_required == 1 else []
+        
+        if repeats_required > 1:
+            if len(all_params[out_key]) != repeats_required:
+                raise CArgNotEnoughRepeats(param_def, all_params[out_key])
+        
+        #
+        # process list2
+        # --spam=FOO -sBAR ...
+        #
+        while len(list2) and arg_idx <= len(sys.argv):
+            user_arg_info = self.__consume_one_arg(arg_idx, list2) 
+            if not user_arg_info:
+                break
+            if not user_arg_info['is_named']:
+                # do not increase arg_idx because we will need this in list3
+                break
+            arg_idx += user_arg_info['no_rawargs_consumed']
+            arg_def = user_arg_info['arg_def']
+            is_repeating = get_param_repeat_count(arg_def) != 1
+            out_key =  arg_def['out_key']
+            if not is_repeating:
+                all_params[out_key] = user_arg_info['value']
+            else:
+                # list type (either count=-1 or count=2,3,4,...)
+                if not isinstance(all_params[out_key], list):
+                    all_params[out_key] = []
+                if arg_def['count'] == -1:
+                    all_params[out_key].append(user_arg_info['value'])
+                else:
+                    if len(all_params[out_key]) > arg_def['count']:
+                        raise Exception('CArgTooManyParameters (got %d, expecting %d)' % (
+                            len(all_params[out_key]), arg_def['count']
+                            ))
+                    all_params[out_key].append(user_arg_info['value'])
+       
+        #
+        # post-process list2. see if we are missing any required parameters
+        #
+        for list2_item in list2:
+            if list2_item['is_required']:
+                out_key = list2_item['out_key']
+                if not out_key in all_params:
+                    raise CArgRequiredButMissing(list2_item)
+                count_wanted = list2_item['count']
+                if count_wanted > 1 and len(all_params[out_key]) < count_wanted:
+                    raise CArgNotEnoughRepeats(list2_item, all_params[out_key])
+        
+        #
+        # process list3
+        # <Pos1>xNN <Pos2>xNN .. <PosN-1>xNN [PosN]..
+        #
+        list3_counter = 0
+        for param_def in list3:
+            if arg_idx >= len(sys.argv):
+                break
+            out_key = param_def['out_key']
+            list3_counter += 1
+            is_last_list3_item = list1_counter < len(list1)
+            remain_count = get_param_repeat_count(param_def)
+            is_finite = remain_count > 0
+            is_repeating = remain_count != 1
+
+            # validate this param-def
+            if not is_last_list3_item:
+                if not param_def['is_required']:
+                    # [definition error] positional argument %s (%d) (1,2,..,N-1) must be required' 
+                    raise CPositionalArgRequired(param_def)
+                if not is_finite:
+                    # [definition error] positional argument %s (%d) (1,2,..,N-1) must repeat finitely
+                    raise CPositionalArgMustBeFiniteudefinition(param_def)
+            this_param = [] if is_repeating else None
+            while remain_count and arg_idx <= len(sys.argv):
+                user_arg_info = self.__consume_one_arg(arg_idx, list3)
+                if not user_arg_info:
+                    break
+                if is_repeating:
+                    this_param.append(user_arg_info['value'])
+                else:
+                    this_param = user_arg_info['value']
+                remain_count -= 1
+                arg_idx += user_arg_info['no_rawargs_consumed']     
+                # ~ might have consumed >1 command line args, e.g. -v, --help, etc
+
+            # finished collecting current item in list1
+            all_params[param_def['out_key']] = this_param
+
+        #
+        # post-process list3: see if we have gathered all required parameters
+        #
+        list3_count = 0
+        for param_def in list3:
+            list3_counter += 1
+            is_last_list3_item = list3_counter == len(sys.argv) - 1 
+            is_required = (not is_last_list3_item) or (is_last_list3_item and param_def['is_required'])
+            repeats_required = get_param_repeat_count(param_def)        # gives 1, 2,3,4...,N, -1
+            out_key = param_def['out_key']
+
+            if not out_key in all_params:
+                if is_required:
+                    raise CArgRequiredButMissing(param_def)
+                else:
+                    all_params[out_key] = None if repeats_required == 1 else []
             
             if repeats_required > 1:
                 if len(all_params[out_key]) != repeats_required:
                     raise CArgNotEnoughRepeats(param_def, all_params[out_key])
         
         return all_params
+<<<<<<< HEAD
     
     def __print_columns(self, data, spacing=3, want_str_list=False):
         """print N columns or output as a list of strings; given data is a list of rows(list)"""
@@ -825,5 +1029,12 @@ class CArgParser(object):
             return (action_str, '')
 
 
+=======
 
+    def print_help(self, action=None):
+        print "HELP!"
+>>>>>>> e459ca04fa321c8696b333cc0811511394c15a46
+
+    def print_usage(self, action=None):
+        print "USAGE"
 
