@@ -29,6 +29,11 @@ class TpManager(object):
     # tuple ('GET','api/path'). if not initialized then None
     _last_api= None
 
+    @classmethod
+    def set_api_credentials(cls, credential_dict):
+        cls.consumer_key = credential_dict['key']
+        cls.consumer_secret = credential_dict['secret']
+
     @classmethod 
     def make_profile_str(cls, token_dict, tweepy_parser_instance=None):
         """generates a string to identify an API-end user (usually by access token)""" 
@@ -68,13 +73,11 @@ class TpManager(object):
     @classmethod 
     def get_request(cls, signin_with_twitter=False, secure=True):
         """returns request token as (request_url, request_token_obj_as_str), or False if fail"""
-        auth = tweepy.OAuthHandler(cls.consumer_key, cls.consumer_secret)
+        auth = tweepy.OAuthHandler(cls.consumer_key.encode('utf8'), cls.consumer_secret.encode('utf8'))
         auth.secure = secure
-        try:
-            request_url = auth.get_authorization_url(signin_with_twitter)
-            return (request_url, auth.request_token.to_string())
-        except tweepy.TweepError as e:
-            return False
+
+        request_url = auth.get_authorization_url(signin_with_twitter)
+        return (request_url, auth.request_token.to_string())
     
     @classmethod
     def get_access(cls, request_token, pin_str=None, secure=True):
@@ -127,7 +130,7 @@ class TpManager(object):
         if api_method_path_str is not None:
             if cls._api_limits is None:
                 cls._api_limits = {}
-            if not profile_str in cls._api_limits
+            if not profile_str in cls._api_limits:
                     cls._api_limits[profile_str]= {}
             cls._api_limits[profile_str][api_method_path_str]= limit_info 
 

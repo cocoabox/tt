@@ -30,11 +30,12 @@ class DObject(object):
             print "no initial queries"
             return True
     
-    def __init_dsn(self,dsn):
-        if isinstance(dsn,tuple):
+    def __init_dsn(self, dsn):
+        if isinstance(dsn, tuple):
             self.__dsn= dsn
-        elif isinstance(dsn,str):
+        elif isinstance(dsn, basestring):
             self.__dsn=(dsn,'DEFERRED')
+
         # ensure directory is useable; if not, raise an exception
         dirname = os.path.dirname(self.__dsn[0])
         if not os.path.isdir(dirname):
@@ -43,10 +44,11 @@ class DObject(object):
             except:
                 raise Exception('unable to create directory %s' % dirname)
 
-    def __init__(self, dsn, init_queries=None):
+    def __init__(self, dsn, init_queries=None, verbose=False):
         """initializes a DObject"""
-        self.__init_queries= init_queries
-        self.__db= None
+        self.__verbose = verbose
+        self.__init_queries = init_queries
+        self.__db = None
         self.__init_dsn(dsn)
 
     def q_multiple(self, q_list, result_type='ALL_ROWS', auto_commit=False):
@@ -106,13 +108,14 @@ class DObject(object):
 
         result= False
         cursor= self.get_db().cursor()
-        print 'Query: '+query
-        if params is None:
-            print '(no parameters)'
-        else:
-            print 'Parameters:'
-            print(params)
-        
+        if self.__verbose:
+            print 'Query:' + query.strip('\n\t ')
+            if params is None:
+                print '(no parameters)'
+            else:
+                print 'Parameters:'
+                print params
+            
         if params is None:
             cursor.execute(query)
         else:
@@ -138,10 +141,14 @@ class DObject(object):
             raise ValueError('unknown result_type; expecting NUMBER,ONE_ROW,ALL_ROWS...')
 
         if auto_commit:
-            print "Committing..."
+            if self.__verbose:
+                print "Committing..."
             self.__db.commit()
-        print "Returning:"
-        print(result)
+
+        if self.__verbose:
+            print "Returning:"
+            print(result)
+
         return result
 
     @classmethod
@@ -234,7 +241,7 @@ class DObject(object):
             search_for: list of 'key' or list of ('key','default_value')
         """
         for wanted in search_for:
-            if isinstance(wanted,tuple) and len(wanted)==2:
+            if isinstance(wanted, tuple) and len(wanted) == 2:
                 if not wanted[0] in subject_dict:
                     subject_dict[wanted[0]] = wanted[1]
             elif isinstance(wanted,basestring):
@@ -244,8 +251,14 @@ class DObject(object):
                 raise TypeError('search_for contains an unrecognized type; expecting string or 2-tuple')
         # if a key in subject is not expected, then return False
         if fail_if_extra:
+            search_for2 = []
+            for search_for_item in search_for:
+                if isinstance(search_for_item, basestring):
+                    search_for2.append(search_for_item)
+                elif isinstance(search_for_item, tuple):
+                    search_for2.append(search_for_item[0])
             for key in subject_dict:
-                if not key in search_for_list:
+                if not key in search_for2:
                     return False
 
         return True
@@ -267,10 +280,16 @@ class DProfiles(DObject):
     FLAG_AUTHENTICATED = 2
     # keys that should exist in a row; (foo,XX) = non-required keys with default value XX 
     ROW_REQUIREMENT = [
-            'profile_alias','user_id',('purpose',''),('priority',0),('auth_flag',DProfiles.FLAG_NO_AUTH),('auth_data',None)
+            'profile_alias', ('user_id', 0), ('purpose', ''), ('priority', 0), 
+            ('auth_flag', FLAG_NO_AUTH), ('auth_data',None)
         ]
-    def __init__(self, directory='../var'):
-        super(DProfiles,self).__init__(directory+'/'+self.DB_FILENAME, self.INIT_QUERIES)
+    def __init__(self, directory='../var', verbose=False):
+        super(DProfiles,self).__init__(directory+'/'+self.DB_FILENAME, self.INIT_QUERIES, verbose)
+    
+    def exists(self, profile_alias):
+        return 1 == self.q("""
+            SELECT COUNT(*) FROM profiles WHERE profile_alias=:profile_alias
+        """, {"profile_alias": profile_alias}, type='NUMBER')
 
     def insert(self, profile_info):
         """inserts a row into the profiles table; profile_info = {'profile_alias':xx,'auth_data':xx,'user_id':xx}"""
@@ -282,10 +301,10 @@ class DProfiles(DObject):
             INSERT OR REPLACE INTO `profiles` %s 
             """ % insert_tuple[0], insert_tuple[1], 'NUMBER_OF_ROWS_AFFECTED', auto_commit=True)
 
-    def get_profile(self, profile_id):
-        return self.q('SELECT * FROM profiles WHERE profile_id=:profile_id', {'profile_id': profile_id}, 'ONE_ROW')
-    
-    def get_profiles(self, auth_flag=None, purpose_str=None):
+    def get(self, profile_alias=None, auth_flag=None, purpose_str=None):
+        if profile_alias is not None:
+            return self.q('SELECT * FROM profiles WHERE profile_alias=:profile_alias', {'profile_alias': profile_alias}, 'ONE_ROW')
+
         if auth_flag is None:
             return self.q('SELECT * FROM profiles', {}, 'ALL_ROWS')
         else:
