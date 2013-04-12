@@ -1,3 +1,5 @@
+import sys
+sys.path.append('../lib/tweepy')
 from tweepy import utils
 from datetime import datetime
 import urllib

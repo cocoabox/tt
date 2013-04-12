@@ -110,13 +110,16 @@ class TpManager(object):
 
     @classmethod
     def update_api_limits(cls, profile_str, tweepy_method_str, api_method_path_str, response_header_dict):
-        if 'x-rate-limit-remaining' in response_header_dict and 'x-rate-limit-limit' in response_header_dict and 'x-rate-limit-reset' in response_header_dict:
+        if ('x-rate-limit-remaining' in response_header_dict 
+                and 'x-rate-limit-limit' in response_header_dict
+                and 'x-rate-limit-reset' in response_header_dict
+                ):
             limit_info = {
                 'remaining': int(response_header_dict['x-rate-limit-remaining']),
                 'limit': int(response_header_dict['x-rate-limit-limit']),
                 'reset_time': int(response_header_dict['x-rate-limit-reset']),
                 'call_time': int(time.time()) 
-            }
+                }
         else:
             # -1 indiciates there was no rate-limiting info in response header
             limit_info = {
@@ -124,7 +127,7 @@ class TpManager(object):
                 'limit': -1,
                 'reset_time': -1,
                 'call_time': int(time.time()) 
-            }
+                }
 
         # update api limit info
         if api_method_path_str is not None:
@@ -145,9 +148,22 @@ class TpManager(object):
 class TpObject(object):
     # number of retries and sec to sleep inbetween retries (but not upon rate-limit failures)
     RETRY_MAX = 5
-    RETRY_SLEEP = 10 
+
+    # time to wait (sec) between each 500 retry
+    RETRY_SLEEP = 10
+
+    # yes, we want to recycle tokens (maybe they will become available while we wait)
+    RETRY_RECYCLE_TOKENS = True
+
+    # 60 seconds minimum required before all tokens are recycled; if not met then will stop retrying 
+    RETRY_RECYCLE_TOKENS_MIN_TIME = 60
+
+    # recycle at most three rounds
+    RETRY_RECYCLE_COUNT_MAX = 3
+
     # can be 'RAW', 'MODEL', 'JSON' (default=None=Model Parser)
     TWEEPY_PARSER = None 
+
     # default tweepy.API() construction parameters; can be user-overridden in: __init__(..api_opts={xx})
     API_OPTS = {}
 
@@ -188,7 +204,25 @@ class TpObject(object):
                     return self.__set_access_token(token_dict)
 
         # if we arrive at here, then we have no more tokens
-        return False
+        if not self.RETRY_RECYCLE_TOKENS:
+            # no recycling; quit
+            return False
+        if self.__last_recycle_time is not None:
+            time_between_recycles = datetime.time(datetime.now()) - self.__last_recycle_time
+            if time_between_recycles < self.RETRY_RECYCLE_TOKENS_MIN_TIME:
+                return False
+        # recycle
+        self.__set_access_token(self.__access_tokens[0])
+
+        self.__last_recycle_time = datetime.time(datetime.now()) 
+        if self.__recycle_count is None: 
+            self.__recycle_count = 1
+        else:
+            self.__recycle_count += 1
+
+        if self.RETRY_RECYCLE_COUNT_MAX and self.__recycle_count > self.RETRY_RECYCLE_COUNT_MAX:
+            # maximum recycling count reached
+            return False
 
     def add_token(self, tokens):
         """adds an access token to the current access_token list for subsequent consumption"""
@@ -325,7 +359,6 @@ class TpObject(object):
 
                 except tweepy.error.TweepError as te:
                     print '[debug] exception:' , te 
-                    # TODO: identify 500 errors and rate_limited errors
                     if te.response and te.response.status in (500, 502, 503, 504):
                         retry_count += 1
                         # failures due to "poor API call parameters" should not yield retries; only 500 errors!
@@ -424,7 +457,7 @@ class TpTimeline(TpObject):
         if isinstance(api_result, list):
             self.__process_timeline(api_result)
     
-        return api_result
+        retur api_result
 
     def get_timeline(self, user=None, opts_dict={}, html_opts_dict={}):
         """get timeline as list of dict. user may be (int)userID or (str)screenName
@@ -466,4 +499,19 @@ class TpFriends(TpObject):
         return self._api('me')
         
 
+class TpUser(TpObject):
+    TWEEPY_PARSER = 'JSON'
+    
+    def __init__(self, tokens):
+        super(TpUser, self).__init__(tokens)
+
+    def get_info(self, screen_names=None, user_ids=None):
+        """forces call users/lookup and get user info about a screen name"""
+        opts_dict = {}
+        if isinstance(screen_name, list):
+            opts_dict['screen_names'] = screen_name
+        if isinstance(user_id, list):
+            opts_dict['user_ids'] = user_id 
+
+        self._api('lookup_users', **opts_dict)
 

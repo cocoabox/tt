@@ -2,16 +2,128 @@ import argparse
 import sys
 import os
 import json
+from db import DProfiles
+
+sys.path.append('../lib/prettytable')
+import prettytable
+
+class Tt_UserError(Exception):
+    def __init__(self, message):
+        self.__msg = message
+
+    @property
+    def message(self):
+        return self.__msg
+
+    def __str__(self):
+        return repr(self.__msg)
 
 class Tt_ConsoleApp(object):
-    def debug_msg(self, message_str, verbosity=1):
-        """prints a debug message given required verbosity(default=1)"""
-        if verbosity >= self.__verbosity:
-            if isinstance(message_str, list):
-                for item in message_str:
-                    print item 
-            else: 
-                print message_str
+    def _get_DProfiles(self):
+        return DProfiles(verbose=self.verbosity>=3)
+
+    def get_access_tokens(self, profile_alias_str=None):
+        """obtains a list of access tokens in order of priority; to get one token, specify
+            profile_alias_str
+        """
+        profiles = self._get_DProfiles() 
+        return profiles.get_access_tokens(profile_alias=profile_alias_str)
+    
+    def output(self, *args, **kwargs):
+        """prints an output message, error message, or formattable output (list or dict)
+            to print to stdout, * call output('spam', ...) 
+            to print to stderr, * call output('spam', ..., error=True)
+            * requires output_type='text' during construction
+            to print formattable output, call output(my_table=[dict_row1, dict_row2, ...]),
+                followed by print_output() 
+        """
+        if not isinstance(self.__output, dict):
+            self.__output = {}
+        for unnamed_arg in args:
+            if self.__output_type == 'text':
+                output_to = sys.stderr if 'error' in kwargs and kwargs['error'] else sys.stdout
+                for stuff in args:
+                    output_to.write(str(stuff))
+                output_to.write('\n')
+            elif self.__output_type == 'json':
+                if not 'messages' in self.__output:
+                    self.__output['messages'] = []
+                self.__output['messages'].append(
+                        args[0] if len(args) == 1 else args
+                        )
+
+        for k, v in kwargs.iteritems():
+            if k in self.__output:
+                self.__output[k].append(v)
+            else:
+                self.__output[k] = [v]
+
+    def print_output(self, trim_empty_lists=False):
+        def need_new_table(existing_cols, this_row_dict):
+            for c in this_row_dict:
+                if not c in existing_cols:
+                    return True
+            return False
+
+        def out_table(out_str, table_instance=None):
+            if table_instance is None:
+                return out_str
+            else:
+                return '%s\n%s' % (out_str, table_instance.get_string())
+
+        if not self.__output:
+            return
+
+        if self.__output_type == 'json':
+            # tidy up output
+            for k in self.__output:
+                v = self.__output[k] 
+                if isinstance(v, list):
+                    if not len(v) and trim_empty_lists:
+                        self.__output.pop(k, None)
+                    if len(v) == 1:
+                        self.__output[k] = v[0]
+        
+            sys.stdout.write(json.dumps(self.__output))
+            return 
+
+        elif self.__output_type == 'text':
+            out_str = ''
+            # print to stdout
+            for data_name, data_rows in self.__output.iteritems():
+                sys.stdout.write('%s:' % data_name)
+                columns = []
+                table_ins = None
+                for row in data_rows:
+                    if isinstance(row, list):
+                        columns = row
+                        out_str = out_table(out_str, table_ins)
+                        table_ins = prettytable.PrettyTable(columns)
+                        continue
+                    elif need_new_table(columns, row):
+                        columns = row.keys()
+                        out_str = out_table(out_str, table_ins)
+                        table_ins = prettytable.PrettyTable(columns)
+
+                    table_row = []
+                    for c in columns:
+                        table_row.append(row[c] if c in row else '')
+                    table_ins.add_row(table_row)
+                if table_ins:
+                    out_str = out_table(out_str, table_ins)
+                sys.stdout.write(out_str + '\n') 
+                out_str = ''
+
+    def debug_msg(self, *args, **kwargs):
+        """prints a debug message given required verbosity(default=1), e.g.
+            self.debug_msg('some list:', ['a','b'], verbosity=1)
+        """
+        verbosity = kwargs['verbosity'] if 'verbosity' in kwargs else 1
+        if verbosity <= self.__verbosity:
+            sys.stdout.write('[%s] ' % self.__class__.__name__)
+            for stuff in args:
+                sys.stdout.write('%s ' % str(stuff))
+            sys.stdout.write('\n')
 
     def __add_arguments(self, add_to, args_dict):
         if not isinstance(args_dict, dict):
@@ -37,7 +149,7 @@ class Tt_ConsoleApp(object):
         self.__api_credentials = txt_dict 
 
     def __init__(self, description_str=None, args=None, has_commands=None,
-            need_api_credentails=True, api_credentials_path=None):
+            need_api_credentails=True, api_credentials_path=None, output_type='text'):
         """parses command line arguments, determine verbosity, etc
 
             Keyword arguments:
@@ -55,6 +167,8 @@ class Tt_ConsoleApp(object):
         self.__api_credentials_path = os.path.realpath(os.getcwd() + '/../var/api_credentials.json') if api_credentials_path is None else api_credentials_path
         self.__consumer_key = None
         self.__consumer_secret = None
+        self.__output = None
+        self.__output_type = output_type
         if need_api_credentails:
             self.__get_api_credentials()
 
@@ -124,6 +238,10 @@ class Tt_ConsoleApp(object):
             return self.__args[arg_name]
         else:
             return default_val
+
+    @property
+    def output_type(self):
+        return self.__output_type
 
 
 
