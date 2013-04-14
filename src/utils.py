@@ -2,8 +2,9 @@ import sys
 sys.path.append('../lib/tweepy')
 from tweepy import utils
 from datetime import datetime
+from db import DTweets
 import urllib
-
+import sqlite3
 
 def parse_timestamp(timestamp_int):
     """convert unix timestamp to a datetime instance; raises TypeError"""
@@ -224,4 +225,66 @@ def process_entities(tweet_dict, options={}):
 
     # html: <a href="expanded_url" alt="url">url</a>
     return (html_text, xml_text)
+
+def extract_tweet_id(tweets):
+    lst = tweets if isinstance(tweets, list) else [tweets]
+    res = []
+    for item in lst:
+        if isinstance(item, str) or isinstance(item, int):
+            res.append(item)
+        elif isinstance(item, dict) or isinstance(sqlite3.Row):
+            if 'tweet_id' in item:
+                res.append(item['tweet_id'])
+            else:
+                raise ValueError('expecting key "tweet_id" to be present in item')
+        else:
+            raise TypeError('expecting item to be str, int, dict, sqlite3.Row instance')
+
+    return res if isinstance(tweets, list) else res[0]
+
+def prepare_DTweet_item(tweet_obj, entities_options={}):
+    """from a Tweepy-returned dict, create a DTweets_part-friendly row"""
+    (html_text, xml_text) = process_entities(tweet_obj)
+    return {
+            'tweet_id': tweet_obj['id'],
+            'plain_text': tweet_obj['text'],
+            'html_text': html_text,
+            'xml_text': xml_text,
+            'coordinates': (
+                tweet_obj['coordinates'] 
+                if 'coordinates' in tweet_obj 
+                else None),
+            'date': tweet_obj['created_at'],
+            'in_reply_to_tweet': (
+                tweet_obj['in_reply_to_status_id'] 
+                if 'in_reply_to_status_id' in tweet_obj 
+                else None),
+            'in_reply_to_user': (
+                tweet_obj['in_reply_to_user_id'] 
+                if 'in_reply_to_user_id' in tweet_obj 
+                else None),
+            'user': tweet_obj['user']['id'],
+            'is_retweet': (
+                1 if tweet_obj['retweeted'] else 0),
+            'source': tweet_obj['source'],
+            'retweeted_count': tweet_obj['retweet_count'],
+            'fav_count': tweet_obj['favorite_count'],
+            'is_my_fav': tweet_obj['favorited'],
+            }
+
+def collect_user_info_from_tweet(tweet_obj):
+    """salvage useable user info from a tweepy-returned dict
+        returns dict {'user_id':{'prop1':xx, ...}, ...}
+        """
+    users_collected = {tweet_obj['user']['id']: tweet_obj['user']}
+    # each mention contains id, screen name, real name
+    for user_mentioned in tweet_obj['entities']['user_mentions']:
+        users_collected[user_mentioned['id']] = {
+                'id': user_mentioned['id'],
+                'screen_name': user_mentioned['screen_name'],
+                'name': user_mentioned['name'],
+                }
+    return users_collected
+
+
 

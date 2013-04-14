@@ -3,7 +3,7 @@ import sys
 from datetime import datetime
 import random
 from pprint import pprint
-from db import DbTweets, DTweets_part
+from db import DTweets, DTimelines
 import utils
 import timeit
 
@@ -150,8 +150,8 @@ def make_sample_tweet_dict():
         """.strip(),
     }
 
-    tdict = merge_dicts(30, tdict, tweet_with_mention)  
-    tdict = merge_dicts(20, tdict, tweet_with_media)  
+    tdict = merge_dicts(10, tdict, tweet_with_mention)  
+    tdict = merge_dicts(10, tdict, tweet_with_media)  
     tdict = merge_dicts(20, tdict, tweet_is_reply)  
     tdict = merge_dicts(10, tdict, tweet_was_retweeted)
     tdict = merge_dicts(5, tdict, tweet_with_coord)
@@ -172,42 +172,19 @@ def collect_user_info_from_tweet(tweet_obj):
                 }
     return users_collected
 
-def make_dtweet_item(tweet_obj,
-        timeline_type=DTweets_part.TIMELINE_HOME,
-        timeline_owner=None):
-    """from a Tweepy-returned dict, create a DTweets_part-friendly row"""
-    (html_text, xml_text) = utils.process_entities(tweet_obj)
-    return {
-            'tweet_id': tweet_obj['id'],
-            'timeline_type': timeline_type,
-            'timeline_owner': timeline_owner,
-            'plain_text': tweet_obj['text'],
-            'html_text': html_text,
-            'xml_text': xml_text,
-            'coordinates': tweet_obj['coordinates'] if 'coordinates' in tweet_obj else None,
-            'date': tweet_obj['created_at'],
-            'in_reply_to_tweet': tweet_obj['in_reply_to_status_id'] if 'in_reply_to_status_id' in tweet_obj else None,
-            'in_reply_to_user': tweet_obj['in_reply_to_user_id'] if 'in_reply_to_user_id' in tweet_obj else None,
-            'user': tweet_obj['user']['id'],
-            'is_retweet': 1 if tweet_obj['retweeted'] else 0,
-            'source': tweet_obj['source'],
-            'retweeted_count': tweet_obj['retweet_count'],
-            'fav_count': tweet_obj['favorite_count'],
-            'is_my_fav': tweet_obj['favorited'],
-            }
-
-def add_tweets_to(dbtweet_obj, count=20):
+def add_tweets_to(dbtweet_obj, tl, count=20):
     lst = []
     for i in range(count):
         sys.stdout.flush()
-        lst.append(make_dtweet_item(make_sample_tweet_dict())) 
-    t.insert(lst)
+        lst.append(utils.prepare_DTweet_item(make_sample_tweet_dict())) 
+    dbtweet_obj.insert(lst)
+    tl.insert(utils.extract_tweet_id(lst), home_timeline=1)
     sys.stdout.write('...round done\n')    
 if __name__ == '__main__':
 
-    t = DbTweets(directory='/tmp/tt/', verbose=False)
-    
-    times = timeit.repeat(lambda:add_tweets_to(t, 10), number=1, repeat=2000)
+    t = DTweets(directory='/tmp/tt/', verbose=False, partition_scale=1)
+    tl = DTimelines() 
+    times = timeit.repeat(lambda:add_tweets_to(t, tl, 10), number=1, repeat=20)
     print "done!"
 
     for i in times:
